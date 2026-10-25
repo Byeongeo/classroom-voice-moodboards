@@ -1,0 +1,3 @@
+# Production: wrangler secret put OPENROUTER_API_KEY / TEACHER_PASSWORD
+OPENROUTER_API_KEY="replace-with-openrouter-key"
+TEACHER_PASSWORD="replace-with-random-teacher-password-at-least-24-characters"

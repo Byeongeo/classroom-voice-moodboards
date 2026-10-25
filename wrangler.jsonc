@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "classroom-voice-moodboards",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-24",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": { "MAX_CLASS_COMMANDS_PER_DAY": "900" },
+  "services": [{ "binding": "NLP_SERVICE", "service": "classroom-korean-nlp" }],
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "classroom-moodboards",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }],
+  "r2_buckets": [{ "binding": "IMAGES", "bucket_name": "classroom-moodboard-images" }],
+  "queues": {
+    "producers": [{ "binding": "JOBS", "queue": "classroom-image-jobs" }],
+    "consumers": [{
+      "queue": "classroom-image-jobs", "max_batch_size": 1,
+      "max_batch_timeout": 1, "max_concurrency": 6, "max_retries": 5,
+      "retry_delay": 30, "dead_letter_queue": "classroom-image-jobs-dlq"
+    }]
+  },
+  "triggers": { "crons": ["* * * * *"] },
+  "limits": { "cpu_ms": 30000 },
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 }
+}

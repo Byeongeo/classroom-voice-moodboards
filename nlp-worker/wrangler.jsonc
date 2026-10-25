@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "classroom-korean-nlp",
+  "main": "index.ts",
+  "compatibility_date": "2026-10-24",
+  "workers_dev": false,
+  "preview_urls": false,
+  "containers": [{ "class_name": "KoreanNlp", "image": "./Dockerfile", "max_instances": 1, "instance_type": "standard-1" }],
+  "durable_objects": { "bindings": [{ "name": "KOREAN_NLP", "class_name": "KoreanNlp" }] },
+  "exports": { "KoreanNlp": { "type": "durable-object", "storage": "sqlite" } }
+}

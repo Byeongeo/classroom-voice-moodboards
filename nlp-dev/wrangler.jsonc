@@ -1,0 +1,6 @@
+{
+  "name": "classroom-korean-nlp",
+  "main": "index.ts",
+  "compatibility_date": "2026-10-24",
+  "vars": { "LOCAL_NLP_URL": "http://127.0.0.1:8789" }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "말로 그리는 교실",
+  "description": "OpenRouter와 Cloudflare로 발화와 이미지 생성 과정을 저장하는 학생용 무드보드입니다.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

@@ -1,0 +1,10 @@
+import { useState, type FormEvent } from 'react';
+import { Plus } from 'lucide-react';
+import type { ImageStyle, WritingGenre } from '../../shared/contracts';
+import { api } from '../api';
+export default function WritingGenres({genres,styles,onChanged}:{genres:WritingGenre[];styles:ImageStyle[];onChanged:()=>Promise<void>}){
+  const [error,setError]=useState('');const [busy,setBusy]=useState(false);
+  async function change(fn:()=>Promise<unknown>){setError('');setBusy(true);try{await fn();await onChanged();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  async function add(event:FormEvent<HTMLFormElement>){event.preventDefault();const form=event.currentTarget;const data=new FormData(form);await change(async()=>{await api('/api/admin/genres','POST',{name:data.get('name'),description:data.get('description'),recommendedStyleId:data.get('recommendedStyleId')||null});form.reset();});}
+  return <section className="panel"><h2>글의 종류 관리</h2><p>학생의 ‘글의 종류’ 선택 메뉴를 추가하고 추천 스타일을 지정합니다. 사용을 끄면 새 선택 메뉴에서만 숨겨지며 기존 이미지와 기록은 유지됩니다.</p>{error&&<p className="error" role="alert">{error}</p>}<div className="dashboard-grid"><div>{genres.map(genre=><div className="list-row" key={genre.id}><div><strong>{genre.name}</strong><p className="fine">{genre.description}<br/>기본 추천: {styles.find(s=>s.id===genre.recommended_style_id)?.name||'지정 없음'}</p></div><button disabled={busy} onClick={()=>change(()=>api('/api/admin/genres/'+genre.id,'PUT',{enabled:!genre.enabled}))}>{genre.enabled?'사용 중 · 끄기':'꺼짐 · 켜기'}</button></div>)}</div><form onSubmit={add}><h3>글의 종류 추가</h3><label>글 종류 이름<input name="name" required maxLength={20} placeholder="예: 기행문, 일기, 안내문"/></label><label>설명<textarea name="description" maxLength={300} rows={2}/></label><label>기본 추천 스타일<select name="recommendedStyleId"><option value="">지정 없음</option>{styles.filter(s=>s.enabled).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><button className="primary" disabled={busy}><Plus size={16}/> 글 종류 추가</button></form></div></section>;
+}

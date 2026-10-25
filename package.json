@@ -1,0 +1,53 @@
+{
+  "name": "classroom-voice-moodboards",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build && npm run start",
+    "dev:ui": "vite --host 127.0.0.1",
+    "build": "node node_modules/vite/bin/vite.js build",
+    "start": "node scripts/start.mjs",
+    "start:nlp-local": "node scripts/start.mjs --local-nlp",
+    "preview": "vite preview",
+    "lint": "node node_modules/typescript/bin/tsc --noEmit",
+    "test": "node node_modules/vitest/vitest.mjs run",
+    "db:local": "node node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --local",
+    "db:remote": "node node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --remote",
+    "deploy": "npm run build && node scripts/check-deploy.mjs && node node_modules/wrangler/bin/wrangler.js deploy",
+    "deploy:check": "npm run build && node node_modules/wrangler/bin/wrangler.js deploy --dry-run",
+    "nlp:check": "node node_modules/wrangler/bin/wrangler.js deploy -c nlp-worker/wrangler.jsonc --dry-run --containers-rollout=none",
+    "nlp:deploy:cloud": "node scripts/deploy-nlp-cloud.mjs",
+    "publish:check": "node scripts/check-publication.mjs"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "papaparse": "^5.7.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^6.2.3",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261024.1",
+    "@types/node": "^22.14.0",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.21",
+    "miniflare": "5.20261019.2-beta",
+    "tailwindcss": "^4.1.14",
+    "typescript": "~5.8.2",
+    "vitest": "^4.1.0",
+    "wrangler": "4.152.0"
+  },
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22.20.0"
+  }
+}

@@ -1,0 +1,7 @@
+import { useState } from 'react';
+import { IMAGE_ACTION_NAMES, type ImageAction } from '../../shared/contracts';
+import { time } from '../api';
+export default function ImageHistory({actions,studentNames={},onRestore}:{actions:ImageAction[];studentNames?:Record<string,string>;onRestore?:(id:string)=>void}){
+  const [limit,setLimit]=useState(30);
+  return <><h3>이미지의 전체 변경 이력 · {actions.length}건</h3><p className="fine">업로드·생성·수정·화면에서 제거·보드 보관·다시 불러온 시각을 남깁니다. X로 제거한 이미지도 원본 파일과 이력이 보존됩니다.</p>{[...actions].reverse().slice(0,limit).map(action=>{let metadata:Record<string,unknown>={};try{metadata=JSON.parse(action.metadata_json);}catch{}return <article className="image-history-row" key={action.id}><a href={'/api/images/'+action.image_id} target="_blank" rel="noreferrer"><img src={'/api/images/'+action.image_id} alt={IMAGE_ACTION_NAMES[action.action]+' 기록 이미지'} loading="lazy"/></a><div><strong>{IMAGE_ACTION_NAMES[action.action]}</strong><p className="fine">{studentNames[action.student_id]||''} {time(action.created_at)}</p>{!!metadata.filename&&<p className="fine">원본 파일명: {String(metadata.filename)}</p>}{!!metadata.parentImageId&&<p className="fine">수정 전 이미지: <a href={'/api/images/'+String(metadata.parentImageId)} target="_blank" rel="noreferrer">원본 보기</a></p>}{onRestore&&<button type="button" onClick={()=>onRestore(action.image_id)}>작업 이미지로 불러오기</button>}</div></article>;})}{!actions.length&&<p className="muted">아직 이미지 변경 기록이 없습니다.</p>}{actions.length>limit&&<button type="button" onClick={()=>setLimit(limit+30)}>이력 30건 더 보기</button>}</>;
+}
