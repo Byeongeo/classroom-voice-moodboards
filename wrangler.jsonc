@@ -21,7 +21,10 @@
   "durable_objects": { "bindings": [{ "name": "TASKS", "class_name": "ClassroomTasks" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ClassroomTasks"] }],
   "queues": {
-    "producers": [{ "binding": "JOBS", "queue": "classroom-image-jobs" }],
+    "producers": [
+      { "binding": "JOBS", "queue": "classroom-image-jobs" },
+      { "binding": "DEAD_LETTER_JOBS", "queue": "classroom-image-jobs-dlq" }
+    ],
     "consumers": [{
       "queue": "classroom-image-jobs", "max_batch_size": 6,
       "max_batch_timeout": 1, "max_concurrency": 1, "max_retries": 5,

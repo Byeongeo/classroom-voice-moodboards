@@ -3,7 +3,7 @@ import { ArrowRight, BookOpen, ShieldCheck } from 'lucide-react';
 import { api } from '../api';
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
-  const [teacher, setTeacher] = useState(false);
+  const [teacher, setTeacher] = useState(() => new URLSearchParams(window.location.search).get('login') === 'teacher');
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError('');

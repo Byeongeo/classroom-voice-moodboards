@@ -2,6 +2,16 @@
 
 교사가 등록한 학생만 로그인하여, 배정된 단원·활동에서 말이나 글로 이미지를 만드는 앱입니다. Cloudflare Workers Free + SQLite Durable Objects + D1 + R2 + Queues를 사용합니다. 이미지 생성·명령 해석·국어 문맥 분석은 OpenRouter로 통합했습니다. **Stanza·UDPipe·Docker·Python·별도 NLP 서버가 필요하지 않습니다.**
 
+## 처음이라면: 브라우저에서 버튼으로 시작
+
+[연수 안내 HTML 열기·다운로드](https://classroom-voice-moodboards.spiffy-jute-ffc.workers.dev/training-guide.html)를 사용하세요. HTML 한 파일에 가입·R2 활성화·OpenRouter 키·관리자 비밀번호 생성·복제·배포·첫 수업을 안내합니다. PC에 Git·Node.js를 설치하지 않고 시작하는 방법입니다.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2FByeongeo%2Fclassroom-voice-moodboards)
+
+공식 배포 버튼이 자신의 GitHub에 소스를 복제하고 D1·R2·SQLite DO·큐를 준비합니다. 본인 계정의 R2를 먼저 활성화하고, 배포 화면의 OPENROUTER_API_KEY와 TEACHER_PASSWORD에 자신의 값을 입력합니다. 가입·인증·GitHub 연결 승인·결제수단 등록은 각 서비스에서 본인이 완료합니다. 빌드 pnpm run build·배포 pnpm run deploy가 자동으로 채워지는지 확인하세요. 배포 명령이 DB 마이그레이션도 적용합니다. Secrets를 공개 소스에 쓰지 않습니다. [공식 배포 버튼 설명](https://developers.cloudflare.com/workers/platform/deploy-buttons/).
+
+교사 로그인은 배포 주소에 /?login=teacher를 붙여 열 수 있습니다. 현재 비밀번호는 공개하지 않습니다. 변경 위치는 Cloudflare → Workers & Pages → 자신의 앱 → Settings → Variables and Secrets → TEACHER_PASSWORD(Secret)입니다. 로컬 .dev.vars의 같은 값과 운영 Secret은 각각 별도로 관리합니다.
+
 ## 포함된 기능
 
 - 학생 로그인: 학년·반·번호·이름·교사 부여 비밀번호. 학생 자가 가입은 없습니다.
@@ -100,6 +110,8 @@ pnpm exec wrangler secret put TEACHER_PASSWORD --config output/wrangler.producti
 ```
 
 최초 배포 직후 Secrets 설정을 마칩니다. 미설정 상태에서는 로그인을 차단합니다. R2 공개 버킷·r2.dev는 켜지 않습니다. SQLite Durable Object 클래스는 Wrangler migration으로 자동 생성됩니다. 외부 분석 서비스 배포나 컨테이너 빌드는 없습니다.
+
+pnpm deploy는 로컬에서는 output/wrangler.production.jsonc를 사용합니다. 공식 버튼의 Workers Builds에서는 WORKERS_CI=1을 확인해 Cloudflare가 리소스를 준비하고 갱신한 wrangler.jsonc를 사용합니다. 두 방식 모두 화면 빌드 → DB 바인딩 DB의 미적용 마이그레이션 → 배포 순서입니다. 데이터베이스 이름이 달라져도 바인딩으로 적용하며, 구조 준비가 실패하면 앱 배포도 중단합니다.
 
 현재 운영 주소는 https://classroom-voice-moodboards.spiffy-jute-ffc.workers.dev 입니다. 교사 비밀번호는 운영자가 설정한 값이며 저장소에 공개하지 않습니다. 연수생은 자신의 계정에 별도 배포합니다. 운영자의 배포 설정은 Git에서 제외한 output/wrangler.production.jsonc로 분리하여 로컬 DB와 공개 템플릿을 보존합니다.
 

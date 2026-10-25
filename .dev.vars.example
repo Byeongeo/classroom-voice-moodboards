@@ -1,3 +1,4 @@
-# Production: wrangler secret put OPENROUTER_API_KEY / TEACHER_PASSWORD
-OPENROUTER_API_KEY="replace-with-openrouter-key"
-TEACHER_PASSWORD="replace-with-random-teacher-password-at-least-24-characters"
+# Cloudflare 배포 화면 또는 로컬 .dev.vars에 본인의 값 두 개를 입력합니다.
+# 실제 키와 비밀번호를 이 예시 파일에 쓰거나 GitHub에 올리지 마세요.
+OPENROUTER_API_KEY=""
+TEACHER_PASSWORD=""

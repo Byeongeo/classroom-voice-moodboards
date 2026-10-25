@@ -7,7 +7,7 @@
 | 항목 | 결과 |
 | --- | --- |
 | TypeScript | 통과 |
-| 자동 시험 | 6개 파일, 37개 시험 통과. output/test-results.json |
+| 자동 시험 | 7개 파일, 39개 시험 통과. 배포 설정 선택·마이그레이션 선행 검증 포함 |
 | 실제 로컬 workerd 부하 | 30명 동시 로그인·제출, 자동 큐·SQLite Durable Objects·D1·R2 경유 |
 | 원본 저장 | 생성/수정 31장 + 업로드 30장 = 61장, 원문/업로드 기록 61건, 이미지 작업 이력 93건 |
 | 파일 무결성 | 각 787,252바이트 PNG, 총 48,022,372바이트. 61개 파일 전부 SHA-256 일치 |
@@ -32,10 +32,14 @@
 | 운영 백업·무결성 | 원본 합계 31,235,502바이트. 백업 ready 완료 후 이미지 사본 61개도 원본 SHA-256과 전부 일치. 화면에서 제거한 31개 원본과 사본 모두 보존 |
 | 운영 버킷 공개 설정 | r2.dev 비활성·연결된 공개 사용자 지정 도메인 없음 |
 | 운영 CPU 표본 | 검증 후반 실행 모델을 구분한 tail 표본 608건 모두 ok. 일반 Worker 346건: HTTP 최대 CPU 2ms·큐 최대 1ms. DO 262건: 최대 CPU 59ms. 검증 전체나 장기 계정 한도를 보장하는 수치는 아님 |
+| 연수용 HTML | 여섯 단계 이동·가입/배포 링크·파일 다운로드 확인. 실제 내려받은 단일 HTML에 로컬 키·운영 비밀번호·생성 값 속성이 없고 외부 JS/CSS 의존 없음. 잘못된 앱 URL 이동 차단 |
+| 배포 자동화 | Workers Builds의 자동 갱신된 root 설정과 로컬 비공개 운영 설정을 구분. DB 바인딩 DB로 구조 준비 후 배포. 기존 운영 환경에서 새 명령의 실제 빌드·마이그레이션(no-op)·업로드 성공 |
 
 원시 결과는 Git에서 제외한 output/workerd-load-results.json, load-results.json, upload-load-results.json, live-free-check.json, live-language-check.json, live-cloud-load-results.json에 있습니다. 실제 API 시험은 합성 학생·발화만 사용했고 API 키·비밀번호는 보고서에 넣지 않았습니다. 검증용 클래스·활동은 종료 후 숨김 처리하고 해당 합성 학생 30명은 비활성화했습니다. 발화·이미지·분석·백업 기록은 남겼습니다. 로컬 실학생 자료를 운영 DB로 옮기지 않았습니다.
 
 운영 주소: https://classroom-voice-moodboards.spiffy-jute-ffc.workers.dev . 운영 시험은 scripts/live-cloud-load-check.mjs --paid로 재현하며 LIVE_BASE_URL을 자신의 배포 주소로 설정합니다. 이 명령은 실제 이미지 31장과 문맥 분석을 호출하므로 OpenRouter 비용이 발생합니다. 키·교사 비밀번호는 로컬 .dev.vars에서만 읽고 로그·보고서에 출력하지 않습니다.
+
+브라우저 배포 안내는 /training-guide.html, 교사 화면 바로가기는 /?login=teacher 입니다. 공식 버튼의 신규 계정 가입·GitHub 연동 승인·R2 계약까지 새 계정으로 대신 완료한 시험은 아닙니다. 이 부분은 각 연수생이 본인 계정에서 진행합니다. 공식 문서의 자동 리소스 준비·Secrets 입력·배포 명령 인식을 기준으로 구성했으며, 기존 계정의 CLI 배포 성공과 구별합니다.
 
 첫 통합 시험은 Node 핸들러 + 실제 로컬 workerd D1/R2와 모의 큐/AI로 동시 생성 6개를 확인합니다. 새 workerd 시험은 모든 핸들러·DO·로컬 큐·저장소를 실제 런타임에서 실행하고 AI만 모의 응답합니다. 자동 큐의 배치당 6개 병렬 처리로 동시성 6개를 확인하며, 별도의 작업 Object 직접 호출은 없습니다. localhost 지연은 실제 모델 지연 또는 Cloudflare 운영 부하 측정과 다릅니다.
 
