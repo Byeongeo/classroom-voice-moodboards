@@ -22,7 +22,7 @@
   "cloudflare": {
     "bindings": {
       "OPENROUTER_API_KEY": { "description": "OpenRouter에서 발급한 본인의 API 키입니다. [키 발급 화면](https://openrouter.ai/settings/keys)에서 복사하세요. 이미지·분석 호출료는 별도입니다." },
-      "TEACHER_PASSWORD": { "description": "본인 앱의 교사 로그인 비밀번호입니다. 연수 안내 HTML의 비밀번호 생성 버튼으로 만든 32자를 붙여 넣으세요. 다른 사람과 공유하지 마세요." },
+      "TEACHER_PASSWORD": { "description": "본인 앱의 교사 로그인 비밀번호입니다. 4~128자로 직접 정하거나 연수 안내 HTML의 자동 생성 버튼을 사용하세요. 다른 사람과 공유하지 마세요." },
       "DB": { "description": "학생 명단·발화·평가·이미지 작업 이력을 저장합니다. 새 DB를 사용하세요." },
       "IMAGES": { "description": "이미지 원본과 백업을 보관할 비공개 R2 버킷입니다. 해당 계정의 R2를 먼저 활성화하세요. 공개 접속은 켜지 않습니다." },
       "JOBS": { "description": "이미지·분석·백업 작업을 처리합니다. 기본값을 사용하세요." },

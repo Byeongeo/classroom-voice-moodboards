@@ -7,15 +7,19 @@
 1. 안내의 GitHub·Cloudflare 회원가입 버튼으로 각자 계정을 만들고 이메일 인증·로그인을 완료합니다.
 2. 이번에 사용할 Cloudflare 계정에서 R2를 활성화합니다. 결제수단과 약관은 본인이 직접 처리합니다. Workers Paid 가입은 필요하지 않습니다.
 3. OpenRouter에 가입하고 본인의 키·사용 잔액을 준비합니다. 키는 HTML에 입력하지 않고 Cloudflare의 Secret 입력 칸에만 붙여 넣습니다.
-4. HTML에서 32자 관리자 비밀번호를 생성·복사해 비공개 장소에 보관합니다. 브라우저를 닫으면 생성 값은 사라집니다.
+4. HTML에 원하는 관리자 비밀번호를 4~128자로 직접 입력하거나 32자 자동 생성 버튼을 사용합니다. 복사해 비공개 장소에 보관합니다. 브라우저를 닫으면 입력 값은 사라집니다.
 5. 내 GitHub에 복제하고 Cloudflare에 배포하기 버튼을 누릅니다. GitHub 연결·저장소 접근 권한을 확인하고 승인합니다. 새 리소스와 두 Secrets 값을 확인한 뒤 Deploy를 누릅니다. 화면 빌드·DB 구조 적용·배포 명령이 저장소에 포함되어 있습니다.
 6. 발급된 자신의 workers.dev 주소를 안내에 붙여 넣어 교사 화면을 엽니다. 자신의 관리자 비밀번호로 로그인하고 예시 학생·활동을 먼저 확인합니다.
 
 다른 계정에서의 실제 회원가입·권한 승인·R2 계약을 HTML이 대신 완료하지는 않습니다. 완료 체크는 사용자가 직접 표시합니다. 생성 비밀번호와 키를 localStorage·GitHub·안내 HTML에 저장하지 않습니다. 버튼 복제 과정에는 Cloudflare의 GitHub 연결과 해당 계정의 리소스 준비가 필요합니다. 연결 승인이 제한된 기관 계정은 아래 로컬/CLI 방법을 사용하거나 계정 관리자와 확인합니다.
 
+배포 화면에서 Secret 입력란이 없었다면 Cloudflare → Workers & Pages → 내 앱 → Settings → Variables and Secrets → Add에서 OPENROUTER_API_KEY와 TEACHER_PASSWORD를 각각 Secret 종류로 등록하고 Deploy로 적용합니다. 이미 등록했다면 중복 등록하지 않습니다. Build 설정의 변수는 앱 실행용 Secret과 별개입니다. [공식 Secret 등록 절차](https://developers.cloudflare.com/workers/configuration/secrets/).
+
+다운로드 버튼은 파일 저장 요청과 다시 저장할 링크를 표시합니다. 앱 내 브라우저가 저장을 지원하지 않으면 도움말의 주소를 복사해 Chrome에서 열고 다시 누릅니다. 인쇄 버튼은 전체 여섯 단계를 펼치고 인쇄창을 요청합니다. 인쇄창이 지원되지 않는 환경에서는 Chrome의 Ctrl+P로 인쇄하거나 PDF로 저장합니다. 버튼 아래에 대체 절차와 단계별 안내로 돌아가기 버튼이 표시됩니다.
+
 ## 관리자 비밀번호 변경
 
-운영 앱: Cloudflare → Workers & Pages → 자신의 앱 → Settings → Variables and Secrets → TEACHER_PASSWORD를 Secret으로 편집하고 적용합니다. 24~128자를 사용합니다. 현재 Secret 원문은 Cloudflare에서 다시 읽어 주지 않습니다. 잊어버렸다면 새 값으로 설정합니다. 관리자 아이디나 로그인 번호는 없으며 관리자 비밀번호만 사용합니다. 로컬 앱: .dev.vars의 TEACHER_PASSWORD 변경 후 로컬 서버를 재시작합니다. 로컬과 운영 값은 자동 동기화되지 않습니다.
+운영 앱: Cloudflare → Workers & Pages → 자신의 앱 → Settings → Variables and Secrets → TEACHER_PASSWORD를 Secret으로 편집하고 적용합니다. 숫자·문자 중 원하는 4~128자를 사용합니다. 현재 Secret 원문은 Cloudflare에서 다시 읽어 주지 않습니다. 잊어버렸다면 새 값으로 설정합니다. 관리자 아이디나 로그인 번호는 없으며 관리자 비밀번호만 사용합니다. 로컬 앱: .dev.vars의 TEACHER_PASSWORD 변경 후 로컬 서버를 재시작합니다. 로컬과 운영 값은 자동 동기화되지 않습니다.
 
 ## 필요한 것
 

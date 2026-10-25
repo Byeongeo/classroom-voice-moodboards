@@ -1,7 +1,7 @@
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
-import worker from '../worker/index';
+import worker, { serve } from '../worker/index';
 import { DEFAULT_RUBRIC, MODELS } from '../shared/contracts';
 import { runAnalysis, runGeneration, recoverJobs } from '../worker/jobs';
 import { processBackup, expireBackups } from '../worker/backup';
@@ -67,6 +67,16 @@ beforeAll(async()=>{
 afterAll(async()=>{vi.unstubAllGlobals();await storage.dispose();});
 
 describe('학생 등록·활동 권한·시간',()=>{
+  it('관리자 비밀번호는 4~128자를 허용하고 틀린 값과 범위 밖 설정을 차단한다',async()=>{
+    const loginWith = (configured:string, entered:string) => serve(new Request(origin+'/api/login', {method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({teacherPassword:entered})}), {...apiEnv,TEACHER_PASSWORD:configured});
+    const four = await loginWith('7391','7391');
+    expect(four.status).toBe(200);expect(four.headers.get('Set-Cookie')).toContain('HttpOnly');
+    expect((await loginWith('7391','7392')).status).toBe(401);
+    expect((await loginWith('739','739')).status).toBe(503);
+    expect((await loginWith('a'.repeat(128),'a'.repeat(128))).status).toBe(200);
+    expect((await loginWith('a'.repeat(129),'a'.repeat(129))).status).toBe(503);
+    expect((await loginWith('7391','a'.repeat(129))).status).toBe(401);
+  });
   it('등록되지 않은 학생의 입장을 차단한다',async()=>{
     expect((await call('/api/login','POST',{grade:5,classNumber:2,studentNumber:99,name:'미등록',password:'student-pass'})).status).toBe(401);
     expect((await call('/api/admin/overview')).status).toBe(401);

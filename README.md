@@ -78,7 +78,7 @@ pnpm install --frozen-lockfile
 Copy-Item .dev.vars.example .dev.vars
 ```
 
-이미 .dev.vars가 있으면 덮어쓰지 않습니다. 이 파일에 OPENROUTER_API_KEY와 24자 이상의 TEACHER_PASSWORD를 설정합니다. 키와 비밀번호를 소스나 채팅에 넣지 않습니다.
+이미 .dev.vars가 있으면 덮어쓰지 않습니다. 이 파일에 OPENROUTER_API_KEY와 4~128자의 TEACHER_PASSWORD를 설정합니다. 키와 비밀번호를 소스나 채팅에 넣지 않습니다.
 
 ```powershell
 pnpm db:local

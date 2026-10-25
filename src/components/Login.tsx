@@ -17,7 +17,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
       <span className="eyebrow">{teacher ? 'TEACHER STUDIO' : 'WELCOME BACK'}</span><h2>{teacher ? '교사의 작업실' : '오늘의 활동을 시작해요'}</h2><p className="muted">{teacher ? '관리자 비밀번호로 수업과 학생 기록을 관리합니다.' : '교사가 등록한 정보와 배부한 비밀번호로 입장해 주세요.'}</p>
       <form onSubmit={submit}>
         {!teacher && <><div className="three-fields"><label>학년<input name="grade" type="number" min="1" max="12" required autoComplete="off" /></label><label>반<input name="classNumber" type="number" min="1" max="50" required autoComplete="off" /></label><label>번호<input name="studentNumber" type="number" min="1" max="100" required autoComplete="off" /></label></div><label>이름<input name="name" maxLength={30} required autoComplete="username" placeholder="등록된 이름" /></label></>}
-        <label>{teacher ? '관리자 비밀번호' : '교사가 부여한 비밀번호'}<input name="password" type="password" minLength={teacher ? 24 : 6} maxLength={128} required autoComplete="current-password" /></label>
+        <label>{teacher ? '관리자 비밀번호 (4자리 이상)' : '교사가 부여한 비밀번호'}<input name="password" type="password" minLength={teacher ? 4 : 6} maxLength={128} required autoComplete="current-password" /></label>
         {error && <p role="alert" className="error">{error}</p>}<button className="primary full" disabled={busy}>{busy ? '확인 중…' : teacher ? '관리자 페이지 열기' : '내 활동 보러 가기'}<ArrowRight size={17} /></button>
       </form><p className="fine"><ShieldCheck size={15} /> 사전에 등록된 학생만 이용할 수 있습니다.</p>
     </section>

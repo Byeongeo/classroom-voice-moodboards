@@ -13,8 +13,8 @@ async function login(request: Request, env: Env) {
   const input = await body(request) as Record<string, unknown>;
   if ('teacherPassword' in input) {
     await rateLimitLogin(request, env, 'teacher');
-    assert(env.TEACHER_PASSWORD?.length >= 24 && !env.TEACHER_PASSWORD.startsWith('replace-'), 503, 'ADMIN_NOT_CONFIGURED', '관리자 비밀번호 설정이 필요합니다.');
-    assert(typeof input.teacherPassword === 'string' && await sameSecret(input.teacherPassword, env.TEACHER_PASSWORD), 401, 'LOGIN_FAILED', '로그인 정보를 확인해 주세요.');
+    assert(env.TEACHER_PASSWORD?.length >= 4 && env.TEACHER_PASSWORD.length <= 128 && !env.TEACHER_PASSWORD.startsWith('replace-'), 503, 'ADMIN_NOT_CONFIGURED', '관리자 비밀번호를 4~128자로 설정해 주세요.');
+    assert(typeof input.teacherPassword === 'string' && input.teacherPassword.length >= 4 && input.teacherPassword.length <= 128 && await sameSecret(input.teacherPassword, env.TEACHER_PASSWORD), 401, 'LOGIN_FAILED', '로그인 정보를 확인해 주세요.');
     return json({ role: 'teacher' }, 200, { 'Set-Cookie': await issueSession(env, 'teacher', null, request) });
   }
   const v = loginSchema.parse(input);
