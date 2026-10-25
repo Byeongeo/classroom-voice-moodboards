@@ -1,4 +1,5 @@
 import { assert, json, now, sql, type Env } from './env';
+import { putObject, deleteObjects } from './storage';
 
 const TABLES = [
   ['students', 'id,grade,class_number,student_number,name,enabled,created_at'],
@@ -35,7 +36,7 @@ export async function processBackup(env: Env, id: string) {
         const key = `backups/${id}/metadata/${table}-${backup.cursor}.json`;
         const data = JSON.stringify({ table, rows: page.results.map(({ _rowid, ...row }) => row) });
         const bytes = new TextEncoder().encode(data);
-        await env.IMAGES.put(key, bytes, { httpMetadata: { contentType: 'application/json' } });
+        await putObject(env,key,bytes,bytes.byteLength,{ httpMetadata: { contentType: 'application/json' } });
         await env.DB.batch([
           sql(env, 'INSERT OR REPLACE INTO backup_parts(backup_id,object_key,byte_size) VALUES(?,?,?)', id, key, bytes.byteLength),
           sql(env, 'UPDATE backups SET cursor=?,status=\'queued\',lease_until=0 WHERE id=?', page.results[page.results.length - 1]._rowid, id),
@@ -45,11 +46,11 @@ export async function processBackup(env: Env, id: string) {
       }
     } else {
       await sql(env, "UPDATE backups SET phase='images' WHERE id=?", id).run();
-      const images = await sql(env, 'SELECT * FROM backup_images WHERE backup_id=? AND copied=0 LIMIT 10', id).all<{image_id:string;source_key:string;object_key:string;mime_type:string}>();
+      const images = await sql(env, 'SELECT * FROM backup_images WHERE backup_id=? AND copied=0 LIMIT 3', id).all<{image_id:string;source_key:string;object_key:string;mime_type:string}>();
       for (const image of images.results) {
         const source = await env.IMAGES.get(image.source_key);
         assert(source, 503, 'BACKUP_SOURCE_MISSING', '원본 이미지가 없어 백업을 완료하지 못했습니다.');
-        await env.IMAGES.put(image.object_key, source.body, { httpMetadata: { contentType: image.mime_type } });
+        await putObject(env,image.object_key,source.body,source.size,{ httpMetadata: { contentType: image.mime_type } });
         await sql(env, 'UPDATE backup_images SET copied=1 WHERE backup_id=? AND image_id=?', id, image.image_id).run();
       }
       if (!images.results.length) {
@@ -63,7 +64,8 @@ export async function processBackup(env: Env, id: string) {
             ...allImages.results.map((p) => ({ name: `images/${p.image_id}.${p.mime_type.split('/')[1]}`, bytes: p.byte_size, url: `/api/admin/backups/${id}/image/${p.image_id}` })),
           ],
         };
-        await env.IMAGES.put(backup.manifest_key, JSON.stringify(manifest), { httpMetadata: { contentType: 'application/json' } });
+        const manifestBytes = new TextEncoder().encode(JSON.stringify(manifest));
+        await putObject(env,backup.manifest_key,manifestBytes,manifestBytes.byteLength,{ httpMetadata: { contentType: 'application/json' } });
         await sql(env, "UPDATE backups SET status='ready',lease_until=0,error_code=NULL WHERE id=?", id).run();
         return;
       }
@@ -97,13 +99,14 @@ export async function backupRoute(request: Request, env: Env, url: URL) {
 }
 
 export async function expireBackups(env: Env) {
-  const expired = await sql(env, "SELECT id FROM backups WHERE expires_at<? AND status IN ('ready','expiring') LIMIT 1", now()).first<{id:string}>();
+  const expired = await sql(env, "SELECT id FROM backups WHERE expires_at<? AND status IN ('ready','failed','expiring') LIMIT 1", now()).first<{id:string}>();
   if (!expired) return;
   await sql(env, "UPDATE backups SET status='expiring' WHERE id=?", expired.id).run();
-  const objects = await env.IMAGES.list({ prefix: `backups/${expired.id}/`, limit: 100 });
-  if (objects.objects.length) await env.IMAGES.delete(objects.objects.map((o) => o.key));
+  const objects = await env.IMAGES.list({ prefix: `backups/${expired.id}/`, limit: 10 });
+  if (objects.objects.length) await deleteObjects(env,objects.objects.map((o) => o.key));
   if (!objects.truncated) {
     await env.DB.batch([
+      sql(env, 'DELETE FROM storage_objects WHERE object_key LIKE ?', `backups/${expired.id}/%`),
       sql(env, 'DELETE FROM backup_images WHERE backup_id=?', expired.id),
       sql(env, 'DELETE FROM backup_parts WHERE backup_id=?', expired.id),
       sql(env, "UPDATE backups SET status='expired' WHERE id=?", expired.id),

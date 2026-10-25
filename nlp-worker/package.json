@@ -1,8 +1,0 @@
-{
-  "name": "classroom-korean-nlp",
-  "private": true,
-  "type": "module",
-  "scripts": { "check": "node node_modules/wrangler/bin/wrangler.js deploy --dry-run --containers-rollout=none" },
-  "dependencies": { "@cloudflare/containers": "0.3.7" },
-  "devDependencies": { "wrangler": "4.152.0", "@cloudflare/workers-types": "^5.20261024.1" }
-}

@@ -3,14 +3,14 @@
   "name": "classroom-voice-moodboards",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-24",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
-  "vars": { "MAX_CLASS_COMMANDS_PER_DAY": "900" },
-  "services": [{ "binding": "NLP_SERVICE", "service": "classroom-korean-nlp" }],
+  "vars": { "MAX_CLASS_COMMANDS_PER_DAY": "300", "MAX_STORAGE_BYTES": "8000000000" },
   "d1_databases": [{
     "binding": "DB",
     "database_name": "classroom-moodboards",
@@ -18,6 +18,8 @@
     "migrations_dir": "migrations"
   }],
   "r2_buckets": [{ "binding": "IMAGES", "bucket_name": "classroom-moodboard-images" }],
+  "durable_objects": { "bindings": [{ "name": "TASKS", "class_name": "ClassroomTasks" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ClassroomTasks"] }],
   "queues": {
     "producers": [{ "binding": "JOBS", "queue": "classroom-image-jobs" }],
     "consumers": [{
@@ -27,6 +29,5 @@
     }]
   },
   "triggers": { "crons": ["* * * * *"] },
-  "limits": { "cpu_ms": 30000 },
   "observability": { "enabled": true, "head_sampling_rate": 0.1 }
 }

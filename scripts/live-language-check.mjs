@@ -23,7 +23,6 @@ try {
   for (const sample of cases) {
     const env = {
       OPENROUTER_API_KEY: key,
-      NLP_SERVICE: { fetch: request => fetch('http://127.0.0.1:8789/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: request.body, duplex: 'half' }) },
       DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [...(sample.context || [])].reverse().map(transcript => ({ transcript })) }) }) }) },
     };
     const started = Date.now();
@@ -37,13 +36,13 @@ try {
         ...(sample.review ? { reviewRequired: semantic.needsReview === true } : {}),
         ...(sample.zero ? { administrativeZero: Object.entries(semantic.specificity).filter(([key]) => key !== 'evidence').every(([, score]) => score === 0) && result.score === 0 } : {}),
       };
-      rows.push({ id: sample.id, text: sample.text, durationMs: Date.now() - started, checks, semantic, score: result.score });
+      rows.push({ id: sample.id, text: sample.text, durationMs: Date.now() - started, checks, semantic, language: result.language, score: result.score });
       console.log(JSON.stringify({ id: sample.id, checks, negation: semantic.negation.label, irony: semantic.irony.label }));
     } catch (error) {
       rows.push({ id: sample.id, checks: { schemaAndGrounding: false }, errorCode: error.code || 'ANALYSIS_VALIDATION_FAILED' });
       console.log(JSON.stringify({ id: sample.id, checks: { schemaAndGrounding: false }, errorCode: error.code || 'ANALYSIS_VALIDATION_FAILED' }));
     }
   }
-  await writeFile('output/live-language-check.json', JSON.stringify({ checkedAt: new Date().toISOString(), provider: 'real-openrouter', morphology: 'actual-stanza-ko-gsd', model: 'openai/gpt-4.1', note: 'Small hand-authored regression set; not a measured accuracy benchmark.', rows }, null, 2));
+  await writeFile('output/live-language-check.json', JSON.stringify({ checkedAt: new Date().toISOString(), provider: 'real-openrouter', engine: 'openrouter-ko-evidence', model: 'openai/gpt-4.1', note: 'Small hand-authored regression set; not a measured accuracy benchmark.', rows }, null, 2));
   assert(rows.every(row => Object.values(row.checks).every(Boolean)), 'Some live language checks need review; see output/live-language-check.json');
 } finally { await server.close(); }

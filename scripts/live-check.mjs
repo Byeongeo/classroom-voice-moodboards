@@ -86,7 +86,7 @@ if (event.image_id) {
 }
 if (event.analysis_json) {
   const analysis = JSON.parse(event.analysis_json);
-  Object.assign(run, { analysis: { engine: analysis.morphology.engine, model: analysis.model, interpretation: analysis.semantic.interpretation, specificity: analysis.semantic.specificity, irony: analysis.semantic.irony, negation: analysis.semantic.negation, needsReview: analysis.semantic.needsReview, score: analysis.score, rubricScores: analysis.semantic.rubricScores } });
+  Object.assign(run, { analysis: { engine: analysis.language?.engine || analysis.morphology?.engine, model: analysis.model, interpretation: analysis.semantic.interpretation, specificity: analysis.semantic.specificity, irony: analysis.semantic.irony, negation: analysis.semantic.negation, needsReview: analysis.semantic.needsReview, score: analysis.score, rubricScores: analysis.semantic.rubricScores } });
 }
 report.runs.push(run);
 await mkdir('output', { recursive: true });

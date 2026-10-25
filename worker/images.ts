@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Activity, Board, Student } from '../shared/contracts';
 import { allowedActivity } from './data';
 import { ApiError, assert, json, now, sql, type Env } from './env';
+import { putObject, recordExistingObject } from './storage';
 
 const MAX_UPLOAD = 4 * 1024 * 1024;
 export async function readUpload(request: Request) {
@@ -93,9 +94,10 @@ export async function uploadImage(request: Request, env: Env, student: Student, 
     if (!object) {
       const source = await readUpload(request);
       const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256',source.bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');
-      object = await env.IMAGES.put(key(event),source.bytes,{httpMetadata:{contentType:source.mime},customMetadata:{eventId:event.id,sha256:hash}});
+      object = await putObject(env,key(event),source.bytes,source.bytes.byteLength,{httpMetadata:{contentType:source.mime},customMetadata:{eventId:event.id,sha256:hash}});
     }
     assert(object,503,'UPLOAD_STORAGE_ERROR','이미지 저장을 완료하지 못했습니다.');
+    await recordExistingObject(env,key(event),object.size);
     await finishUpload(env,event,object);
     return json({eventId:event.id,imageId:event.id},201);
   } catch(error) {
@@ -105,10 +107,10 @@ export async function uploadImage(request: Request, env: Env, student: Student, 
   }
 }
 export async function recoverUploads(env: Env) {
-  const rows = await sql(env,"SELECT * FROM events WHERE kind='upload' AND status='processing' AND lease_until<? LIMIT 30",now()).all<UploadEvent>();
+  const rows = await sql(env,"SELECT * FROM events WHERE kind='upload' AND status='processing' AND lease_until<? LIMIT 2",now()).all<UploadEvent>();
   for (const event of rows.results) {
     const object = await env.IMAGES.head(key(event));
-    if (object) await finishUpload(env,event,object);
+    if (object) { await recordExistingObject(env,key(event),object.size); await finishUpload(env,event,object); }
     else await sql(env,"UPDATE events SET status='failed',error_code='UPLOAD_INTERRUPTED',lease_until=0,updated_at=? WHERE id=? AND status='processing'",now(),event.id).run();
   }
 }

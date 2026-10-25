@@ -12,10 +12,16 @@ export async function validatedUpload(file:File):Promise<Blob>{
 }
 export async function sendUpload(activityId:string,file:File,id:string,blob:Blob){
   for(let attempt=0;attempt<16;attempt++){
-    const response=await fetch(`/api/activities/${activityId}/uploads`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':blob.type,'X-Upload-ID':id,'X-File-Name':encodeURIComponent(file.name)},body:blob});
-    const result=await response.json() as {code?:string;error?:string};
+    let response:Response;let result:{code?:string;error?:string};
+    try{
+      response=await fetch(`/api/activities/${activityId}/uploads`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':blob.type,'X-Upload-ID':id,'X-File-Name':encodeURIComponent(file.name)},body:blob});
+      result=await response.json();
+    }catch{
+      if(attempt===15)throw new Error('연결이 불안정합니다. 원본 파일과 업로드 기록을 확인한 뒤 다시 시도해 주세요.');
+      await new Promise(resolve=>setTimeout(resolve,1200+Math.random()*500));continue;
+    }
     if(response.ok)return;
-    if(response.status===429&&result.code==='UPLOAD_BUSY'&&attempt<15){await new Promise(resolve=>setTimeout(resolve,1200+Math.random()*500));continue;}
+    if(attempt<15&&(((response.status===429||response.status===409)&&result.code==='UPLOAD_BUSY')||(response.status===503&&result.code==='UPLOAD_STORAGE_ERROR'))){await new Promise(resolve=>setTimeout(resolve,1200+Math.random()*500));continue;}
     throw new Error(result.error||'이미지를 올리지 못했습니다.');
   }
 }

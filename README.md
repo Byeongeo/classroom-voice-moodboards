@@ -1,6 +1,6 @@
 # 말로 그리는 교실
 
-교사가 등록한 학생만 로그인하여, 지정된 시간에 배정된 단원·활동을 선택하고 음성 또는 직접 입력으로 이미지를 만드는 앱입니다. 기존 Gemini/Express 구현은 Cloudflare Workers + OpenRouter 구조로 교체했습니다.
+교사가 등록한 학생만 로그인하여, 배정된 단원·활동에서 말이나 글로 이미지를 만드는 앱입니다. Cloudflare Workers Free + SQLite Durable Objects + D1 + R2 + Queues를 사용합니다. 이미지 생성·명령 해석·국어 문맥 분석은 OpenRouter로 통합했습니다. **Stanza·UDPipe·Docker·Python·별도 NLP 서버가 필요하지 않습니다.**
 
 ## 포함된 기능
 
@@ -11,7 +11,7 @@
 - 설명문·논설문·광고·소설·시별 스타일 추천. 실사·도해·포스터·일러스트·수채화·만화 및 교사 지정 스타일.
 - 발화 원문, 음성 인식 원문, 스타일, 실제 이미지 프롬프트, 이미지 수정의 원본 관계, 처리 결과를 연결해 보존합니다.
 - 활동별 평가 기준 추가·삭제(최대 8개). 기존 분석에는 당시 기준이 남습니다.
-- 학생·활동별 대시보드: 참여, 사용 한도, 기준별 표현, 발화 흐름, 내용어 빈도, 분석 근거·교사 검토 메모.
+- 학생·활동별 대시보드: 참여, 사용 한도, 기준별 표현, 발화 흐름, 핵심 표현 빈도, 분석 근거·교사 검토 메모.
 - 비공개 R2 백업, 이미지 사본과 학습 기록 ZIP, 백업 보관기간 설정. 백업 만료는 원본 기록을 삭제하지 않습니다.
 - 점수 기준 클릭: 0~4점의 기준·예시, 활동의 평가 기준, 평균 산식, 실제 발화별 점수·원문 인용 근거를 확인합니다.
 - 같은 클래스 안에서도 활동마다 여러 학급·학생을 다르게 배정합니다. 활동 작성 시 대상과 내용을 함께 저장하며, 선택적으로 클래스 기본 배정을 따를 수 있습니다. 개별 설정이 반 배정보다 우선하며 배정 해제 후에도 기존 교사 기록은 보존합니다.
@@ -20,30 +20,35 @@
 - 업로드 원본 바이트와 생성·수정본을 각각 보존하고 모든 이미지 작업 이력을 교사 화면·학생 기록 ZIP·백업에 포함합니다.
 - 관리자에서 글의 종류를 추가·숨김 처리하고 기본 추천 스타일을 지정합니다.
 
-## 구조
+## 구조와 모델
 
 | 구성 | 역할 |
 | --- | --- |
-| Workers Static Assets | React/Vite 프론트엔드 |
-| Workers API | 인증·권한·활동 시간·한도 검사, 비공개 이미지 전달 |
-| D1 | 학생·클래스·활동·발화·분석·이미지 연결 정보 |
-| R2 | 이미지 파일과 백업 사본. 공개 버킷 사용 금지 |
-| Queues | 브라우저 연결과 독립적인 이미지/분석/백업 처리. 소비자 최대 6개 |
-| Scheduled Worker | 미발행 작업·만료된 처리 임대 복구, 만료 세션·백업 정리 |
-| 비공개 NLP Worker + Container | Stanford Stanza 한국어 품사·기본형·의존 구문 분석 |
-| OpenRouter | 고정된 비 Gemini 모델을 통한 이미지 생성·명령 해석·문맥 분석 |
+| Workers Static Assets | React/Vite 학생·교사 화면 |
+| 일반 Worker | 정적 파일 제공, API를 비공개 Durable Object로 전달 |
+| SQLite 기반 Durable Objects | 인증·비밀번호 해시·권한·JSON·이미지 처리. Free 지원, 요청당 기본 CPU 30초 |
+| D1 | 명단·클래스·활동·발화·분석·이미지 연결·수정/제거 이력·저장 용량 예약 |
+| 비공개 R2 | 이미지 원본·모든 수정본·백업 사본 |
+| Queues | 이미지/분석/백업 작업, 운영 소비자 최대 6개·배치 1개 |
+| Cron | 매분 복구 작업을 큐에 등록. 처리 상태는 D1에 남음 |
+| OpenRouter | 서버에서 고정된 모델 호출, 학생에게 API 키를 노출하지 않음 |
 
-모델은 `shared/contracts.ts`의 `MODELS`에서 서버 측에 고정합니다. 학생 요청으로 모델을 바꿀 수 없습니다.
+모델은 shared/contracts.ts의 MODELS에서 고정합니다. 이미지 openai/gpt-image-2, 명령 해석 openai/gpt-4.1-mini, 문맥 분석 openai/gpt-4.1입니다. 이미지 API는 1024 정방형·low·JPEG 압축을 요청합니다. 브라우저 음성 입력은 Web Speech API ko-KR이며 음성 파일은 저장하지 않습니다. 인식문과 학생이 수정해 제출한 문장을 구분해 보관합니다. Chrome에서 실제 음성 입력 정상 동작을 확인했습니다.
 
-- 이미지: `openai/gpt-image-2`, OpenRouter 전용 `/api/v1/images`, 1024 정방형·low·JPEG 압축 요청.
-- 명령 해석: `openai/gpt-4.1-mini`.
-- 국어 문맥·반어·부정 범위와 평가 기준 분석: `openai/gpt-4.1`.
+## 무료 플랜의 범위
 
-음성 입력은 브라우저 Web Speech API의 `ko-KR` 인식입니다. 인식문을 학생이 확인·수정한 후 전송합니다. 지원하지 않는 브라우저는 직접 입력을 사용할 수 있습니다. 앱은 원본 음성 파일을 저장하지 않습니다. 음성 인식은 브라우저 제공자의 서비스로 처리될 수 있습니다.
+Workers Paid 가입이나 Containers를 요구하지 않습니다. 다만 **무료 제공량 내 운영을 목표로 한 구성**이며 무제한 무료 서비스는 아닙니다.
 
-연속 인식과 중간 인식문을 사용하며, 무음으로 연결이 끝나면 확정된 문장을 유지한 채 제한된 횟수만 재연결합니다. 마이크·권한·네트워크 오류는 원인을 안내합니다. 내장 브라우저의 인식 서비스가 지원되지 않으면 Chrome·Edge에서 접속해야 합니다. 실제 마이크의 음질·브라우저 지원은 실행 환경에서 별도로 확인합니다.
+- Workers: 하루 100,000 요청. 일반 Worker의 CPU 10ms 한도를 고려해 API와 파일 처리를 SQLite Durable Objects로 전달합니다.
+- Durable Objects: Free의 SQLite 방식만 사용합니다. 하루 100,000 요청, 13,000 GB-s 실행량 등의 계정 한도가 적용됩니다.
+- D1: 하루 500만 행 읽기·10만 행 쓰기, 계정 총 5GB. Free의 개별 DB 최대 크기 500MB입니다.
+- Queues: 하루 10,000 작업, 메시지 보관 24시간. 메시지가 만료되어도 D1의 미완료 작업에서 다시 발행합니다.
+- R2 Standard: 월 10GB-month, Class A 100만·Class B 1,000만 요청의 무료 제공량. **결제수단 등록을 통한 R2 활성화가 필요하며 초과분은 과금**됩니다.
+- OpenRouter 이미지·분석 비용은 별도입니다. Cloudflare 무료 플랜으로 API 사용료까지 없어지지는 않습니다.
 
-각 기능의 조작 방법과 점수 산식은 [교사·학생 사용 안내](docs/FEATURE-GUIDE.md)에 정리했습니다.
+앱 전체의 발화 상한은 한국 날짜 기준 기본 하루 300회입니다. 이미지와 백업은 합계 8,000,000,000바이트까지 원자적으로 예약하고 저장합니다. 모든 수정본·화면에서 제거한 이미지·백업 사본을 포함하며, 80%부터 교사 백업 화면에 경고를 표시합니다. 상한 도달 시 새 파일 저장을 중단하고 기존 원본·로그는 보존합니다. 이는 전용 버킷의 앱 내부 안전장치이며 다른 앱, 계정 전체 사용량, 요청 요금까지 막는 Cloudflare 청구 상한은 아닙니다. 불확실한 저장 실패는 용량 예약을 남겨 보수적으로 계산합니다.
+
+공식 기준: [Workers](https://developers.cloudflare.com/workers/platform/limits/), [Durable Objects 요금](https://developers.cloudflare.com/durable-objects/platform/pricing/)·[CPU 제한](https://developers.cloudflare.com/durable-objects/platform/limits/), [D1](https://developers.cloudflare.com/d1/platform/pricing/), [Queues](https://developers.cloudflare.com/queues/platform/pricing/), [R2](https://developers.cloudflare.com/r2/pricing/).
 
 ## GitHub에서 복제하기
 
@@ -52,39 +57,36 @@ git clone https://github.com/Byeongeo/classroom-voice-moodboards.git
 cd classroom-voice-moodboards
 ```
 
-이 저장소에는 앱 소스·명단 빈 양식·데이터베이스 구조만 포함합니다. API 키, 관리자 비밀번호, 학생 명단·발화·이미지, 로컬 데이터베이스와 백업은 포함하지 않습니다. 복제한 앱의 데이터베이스는 비어 있으며 교사가 학생과 활동을 등록해야 합니다. GitHub 웹사이트에서는 **Code → Download ZIP**으로 받을 수도 있습니다.
+저장소에는 소스·빈 명단 양식·DB 마이그레이션만 포함합니다. 실제 API 키·관리자 비밀번호·학생 명단·발화·이미지·로컬 DB·백업은 공개하지 않습니다. GitHub의 Code → Download ZIP도 이용할 수 있습니다.
 
-## 연수생의 로컬 실행
+## 로컬 실행 — Cloudflare 가입·결제 없이 가능
 
-Node.js 22.20 이상과 pnpm만 설치합니다. pnpm이 없다면 `npm install --global pnpm@11.25.0`으로 설치합니다. **Docker·WSL·Python 설치는 필요하지 않습니다.** Stanford Stanza 분석 서버를 Cloudflare에서 먼저 한 번 배포하고, 로컬 앱에서 비공개 서비스 바인딩으로 연결합니다. [연수 환경 준비 안내](docs/TRAINING-SETUP.md)를 참고하세요. 잠금 파일은 `pnpm-lock.yaml`입니다.
+Node.js 22.20 이상과 pnpm 11.25를 설치합니다. pnpm이 없으면 npm install --global pnpm@11.25.0을 사용합니다.
 
 ```powershell
 pnpm install --frozen-lockfile
-pnpm exec wrangler login
 Copy-Item .dev.vars.example .dev.vars
 ```
 
-이미 `.dev.vars`가 있으면 덮어쓰지 않습니다. `OPENROUTER_API_KEY`와 24자 이상 `TEACHER_PASSWORD`를 설정합니다. 실제 키나 비밀번호를 커밋하지 않습니다.
+이미 .dev.vars가 있으면 덮어쓰지 않습니다. 이 파일에 OPENROUTER_API_KEY와 24자 이상의 TEACHER_PASSWORD를 설정합니다. 키와 비밀번호를 소스나 채팅에 넣지 않습니다.
 
 ```powershell
 pnpm db:local
 pnpm dev
 ```
 
-`http://127.0.0.1:8787`을 엽니다. DB·R2·큐는 로컬 자원을 쓰고 한국어 분석만 같은 계정에 배포한 Cloudflare Stanza 서버에 연결합니다. 분석 서버가 없으면 분석은 완료되지 않습니다. UI만 수정할 때는 실행 중인 Worker에 프록시하는 `pnpm dev:ui`를 사용할 수 있습니다. 로컬 Cron은 자동 실행되지 않으므로 복구 테스트는 `http://127.0.0.1:8787/cdn-cgi/local/scheduled`로 트리거합니다.
+http://127.0.0.1:8787 에 접속합니다. DB·R2·큐·Durable Objects는 로컬에서 실행하고, AI 요청만 OpenRouter로 보냅니다. 교사 로그인 후 명단을 등록하고 활동의 참여 대상을 선택합니다. 로컬 Cron은 자동 실행되지 않으므로 복구 검증 시 /cdn-cgi/local/scheduled를 호출합니다. 상세 단계는 [연수 안내](docs/TRAINING-SETUP.md), 기능별 설명은 [사용 안내](docs/FEATURE-GUIDE.md)에 있습니다.
 
-## Cloudflare 배포 순서
+## Cloudflare Free 배포
 
-Stanza의 PyTorch 모델은 일반 Worker의 메모리·실행 환경에 직접 넣지 않습니다. **Cloudflare Workers Builds**에서 분석 서버 이미지를 빌드·배포하므로 PC에 Docker를 설치하지 않습니다. Workers Paid 및 Containers 이용 가능 계정은 필요합니다. 원본 NLP 모델은 원격 이미지 빌드 때 내려받으며 컨테이너 실행 시 인터넷 접속을 끕니다.
-
-먼저 [연수 환경 준비 안내](docs/TRAINING-SETUP.md)에 따라 Git 저장소를 연결하고 `classroom-korean-nlp`를 배포합니다. 빌드 명령은 `pnpm nlp:check`, 배포 명령은 `pnpm nlp:deploy:cloud`입니다. 이 배포 명령은 Cloudflare 빌드 환경에서만 실행됩니다. 현재 실제 원격 빌드·배포는 아직 수행하지 않았습니다.
+대시보드에서 R2를 활성화합니다. Workers Paid로 업그레이드할 필요는 없습니다. 신규 배포는 빈 DB를 사용하며 localhost 학생 자료를 자동 업로드하지 않습니다.
 
 ```powershell
 pnpm exec wrangler login
 pnpm exec wrangler d1 create classroom-moodboards
 ```
 
-출력된 실제 `database_id`를 루트 `wrangler.jsonc`에 넣습니다. 현재 값은 로컬 검토용 자리표시자입니다.
+출력된 자신의 database_id를 wrangler.jsonc의 자리표시자에 입력합니다. 연수생마다 자신의 계정·리소스를 사용합니다.
 
 ```powershell
 pnpm exec wrangler r2 bucket create classroom-moodboard-images
@@ -96,41 +98,32 @@ pnpm exec wrangler secret put OPENROUTER_API_KEY
 pnpm exec wrangler secret put TEACHER_PASSWORD
 ```
 
-최초 Worker 배포 직후 Secrets가 없으면 로그인을 차단하므로 관리자 비밀번호와 OpenRouter 키 설정을 곧바로 마칩니다. 배포 전에는 `pnpm deploy:check`로 메인 Worker를 검증합니다. NLP Worker는 `pnpm nlp:check`로 Worker 번들·바인딩을 검사합니다. 실제 이미지 빌드·서버 실행 성공은 Cloudflare 빌드 로그와 활동의 분석 완료 여부로 확인해야 합니다.
+최초 배포 직후 Secrets 설정을 마칩니다. 미설정 상태에서는 로그인을 차단합니다. R2 공개 버킷·r2.dev는 켜지 않습니다. SQLite Durable Object 클래스는 Wrangler migration으로 자동 생성됩니다. 외부 분석 서비스 배포나 컨테이너 빌드는 없습니다.
 
-R2의 `r2.dev`·공개 도메인을 켜지 않습니다. NLP Worker의 `workers_dev`와 `preview_urls`는 꺼져 있고 메인 Worker의 서비스 바인딩으로만 호출합니다. 다른 환경을 만들 때는 D1·R2·Queue·Secrets를 모두 분리해 사용합니다.
+## 분석의 의미와 자료 전송
 
-## 기록과 복구
+OpenRouter가 현재 발화와 같은 활동의 최근 발화 최대 4개, 당시 교사 평가 기준을 받아 구체성·반어·부정 범위를 함께 판단합니다. 학생 이름·학년·반·번호는 분석 요청의 별도 필드로 보내지 않습니다. 단, 학생이 발화 본문에 직접 적은 개인정보는 본문에 포함될 수 있습니다.
 
-학생의 전송을 수락하면 D1에 원문과 작업 번호를 먼저 기록합니다. 큐 발행이 실패해도 Cron이 다시 발행합니다. 동일 요청 번호의 재전송은 기존 작업을 반환합니다. 학생마다 한 작업만 동시에 진행하며, 생성 결과를 R2에 올린 뒤 D1의 이미지 연결·보드·성공 상태를 한 배치로 확정합니다.
+원문에 실제로 있는 핵심 표현과 인용만 허용하고, 표현 등장 횟수는 서버에서 계산합니다. 이는 형태소·품사·기본형·의존 구문 분석이나 어휘 다양도 측정이 아닙니다. 근거가 원문에 없으면 분석을 확정하지 않습니다. 불명확한 반어·이중 부정은 교사 확인 대상으로 남깁니다. 기존 Stanza 분석은 과거 기록으로 계속 열람합니다.
 
-R2 업로드 뒤 D1 확정이 실패하면 결정적인 객체 키를 통해 저장된 파일을 재사용합니다. 저장 확정이 끝나기 전에는 성공으로 표시하지 않습니다. 모델·저장 오류는 기록에 남으며 자동 재시도는 최대 3회입니다. 외부 모델 호출 뒤 응답이 유실된 경우까지 과금을 정확히 한 번으로 보장하지는 못합니다.
+문자 분석 요청에는 provider.data_collection=deny를 설정해 자료 수집 정책에 맞지 않는 제공자를 제외합니다. 이미지 API는 해당 요청 옵션을 지원하지 않으므로 OpenRouter 계정의 [개인정보 설정](https://openrouter.ai/settings/privacy)에서도 학습용 자료 수집을 허용하지 않도록 설정해야 합니다. 이것이 모든 제공자의 무보관이나 국내 처리까지 보장하는 것은 아닙니다. [OpenRouter 정책 옵션](https://openrouter.ai/docs/guides/routing/provider-selection).
 
-백업은 진행 중인 생성·분석이 끝난 뒤 시작합니다. 메타데이터를 25행씩, 이미지를 10개씩 복사해 메모리를 제한합니다. 백업은 수집 기간에 걸친 학습 기록 보관본이며, D1 전체의 단일 시점 재해 복구 덤프가 아닙니다. 계정 복구에는 D1 Time Travel/별도 SQL 내보내기도 사용해야 합니다. 비밀번호 해시·세션은 학습 기록 백업에서 제외합니다.
+학생 발화를 UDPipe나 국내 연구기관의 공개 분석 서버에 보내는 기능은 없습니다. 국내 연구기관의 도구·모델을 조사한 결과와 별도 적용을 보류한 이유는 [한국어 분석 비교](docs/NLP-COMPARISON.md)에 정리했습니다.
+
+## 기록·복구·백업
+
+수락한 발화는 먼저 D1에 저장하고 큐에 전달합니다. 동일 요청 번호는 기존 작업으로 처리합니다. R2 파일 저장 후 D1의 이미지 연결·성공 상태·작업 이력을 함께 확정합니다. 그 사이 DB 오류가 발생하면 기존 R2 파일을 재사용합니다. 모델·저장 실패는 기록에 남기고 제한된 횟수만 재시도합니다.
+
+학생의 X 제거는 화면에서만 숨깁니다. 업로드·생성·수정·보관·불러오기·제거 이력과 원본 파일은 남습니다. 백업 만료도 백업 사본만 정리합니다. 이미지·발화 원본을 자동 삭제하지 않습니다.
+
+백업은 생성·분석이 끝난 뒤 메타데이터 25행·이미지 3장씩 복사합니다. 큰 백업은 80MB, 학생 기록은 64MB 단위 ZIP으로 나누어 내려받습니다. 학습 기록 백업에는 암호 해시와 세션을 포함하지 않습니다. 수집 기간에 걸쳐 만들어지는 보관본이므로 D1 단일 시점 복구에는 Time Travel·별도 SQL 내보내기를 이용합니다.
 
 ## 검증
 
 ```powershell
 pnpm lint
 pnpm test
-pnpm build
+pnpm deploy:check
 ```
 
-테스트는 실제 로컬 workerd의 D1/R2와 Node에서 실행하는 API 핸들러를 연결하며 AI 응답과 큐 배달은 모의 처리합니다. 30명 동시 제출·저장, 권한·시간·한도, 중복 요청, 저장 장애 복구, 백업, 비밀번호 폐기, Excel·CSV를 검증합니다. `output/load-results.json`과 `output/test-results.json`을 확인하세요. 실제 OpenRouter 지연·계정 한도·운영 Cloudflare 처리량의 부하 시험과 구분해야 합니다.
-
-국어 분석 선택 근거와 한계는 `docs/NLP-COMPARISON.md`, 수업 규모 운영 판단은 `docs/OPERATIONS.md`를 참고하세요.
-
-## 개발자 선택 사항: Stanza 자체를 로컬에서 수정
-
-연수 기본 과정에는 필요하지 않습니다. 분석 서버 코드를 수정할 때만 Python 3.12로 직접 실행할 수 있습니다. 이 경로도 Docker를 사용하지 않습니다.
-
-```powershell
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-.venv\Scripts\python.exe -m pip install -r nlp-worker/requirements.txt
-$env:STANZA_RESOURCES_DIR = Join-Path (Get-Location) 'output/stanza-models'
-.venv\Scripts\python.exe -c "import stanza; stanza.download('ko', package='gsd', processors='tokenize,pos,lemma,depparse')"
-.venv\Scripts\python.exe -m uvicorn app:app --app-dir nlp-worker --host 127.0.0.1 --port 8789 --no-access-log
-```
-
-별도 터미널에서 `pnpm build`와 `pnpm start:nlp-local`을 실행합니다. 실제 Stanza 구조 분석 확인은 `.venv\Scripts\python.exe scripts/nlp-check.py`를 사용합니다. 현재 검토용 localhost는 이 선택 경로로 실행 중입니다.
+pnpm test:load는 API·Durable Objects·Queues·D1·R2를 실제 로컬 workerd에서 실행하고 약 0.79MB PNG를 사용해 30명 로그·이미지·수정·제거 이력을 확인합니다. 이 시험의 AI만 모의 응답입니다. 별도의 실제 OpenRouter 합성 예문 시험은 scripts/live-language-check.mjs --paid로 실행하며 API 비용이 발생합니다. 자동 시험은 운영 Cloudflare의 무료 한도나 실제 모델의 동시 처리량을 재현하지 않습니다. 결과와 확인 범위는 [검증 기록](docs/VERIFICATION.md), [운영 판단](docs/OPERATIONS.md)에 구분해 적습니다.

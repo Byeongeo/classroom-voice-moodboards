@@ -3,9 +3,10 @@ import { activitySchema, classSchema, commandSchema, genreSchema, loginSchema, M
 import { cookie, digest, getSession, issueSession, passwordHash, rateLimitLogin, requireTeacher, sameSecret } from './auth';
 import { allowedActivity, kstDayStart, quota, studentById, workspace } from './data';
 import { ApiError, assert, body, json, now, sql, type Env, type Session } from './env';
-import { processBatch, recoverJobs } from './jobs';
+import { processBatch } from './jobs';
+import { storageUsage } from './storage';
 import { backupRoute, createBackup } from './backup';
-import { assignClass, assignActivity, activityAccessSql, activityAssignmentStatements, validateParticipants } from './participants';
+import { assignClass, assignActivity, activityAccessSql, activityAssignmentStatements, validateParticipants, participantInserts } from './participants';
 import { imageAction, uploadImage } from './images';
 
 async function login(request: Request, env: Env) {
@@ -29,9 +30,11 @@ async function registerRoster(request: Request, env: Env) {
   const { students } = rosterSchema.parse(await body(request));
   const unique = new Set(students.map((s) => `${s.grade}:${s.classNumber}:${s.studentNumber}`));
   assert(unique.size === students.length, 400, 'DUPLICATE_ROSTER', '파일 안에 같은 학년·반·번호가 중복되어 있습니다.');
+  const duplicates = await sql(env, `SELECT grade,class_number,student_number FROM students WHERE
+    (grade || ':' || class_number || ':' || student_number) IN (${[...unique].map(() => '?').join(',')})`, ...unique).all<{grade:number;class_number:number;student_number:number}>();
+  const duplicate = duplicates.results[0];
+  assert(!duplicate, 409, 'STUDENT_EXISTS', duplicate ? `${duplicate.grade}학년 ${duplicate.class_number}반 ${duplicate.student_number}번은 이미 등록되어 있습니다.` : '이미 등록된 학생이 있습니다.');
   const rows = await Promise.all(students.map(async (s) => {
-    const existing = await sql(env, 'SELECT id FROM students WHERE grade=? AND class_number=? AND student_number=?', s.grade, s.classNumber, s.studentNumber).first();
-    assert(!existing, 409, 'STUDENT_EXISTS', `${s.grade}학년 ${s.classNumber}반 ${s.studentNumber}번은 이미 등록되어 있습니다.`);
     const password = s.password || crypto.randomUUID().replaceAll('-', '').slice(0, 10);
     const salt = crypto.randomUUID();
     return { ...s, id: crypto.randomUUID(), password, salt, hash: await passwordHash(password, salt) };
@@ -45,7 +48,7 @@ async function admin(request: Request, env: Env, session: Session, url: URL) {
   requireTeacher(session);
   const route = url.pathname;
   if (route === '/api/admin/overview' && request.method === 'GET') {
-    const [classes, activities, students, settings, backups, styles, rooms, assignments, genres, activityRooms, activityAssignments] = await Promise.all([
+    const [classes, activities, students, settings, backups, styles, rooms, assignments, genres, activityRooms, activityAssignments, storage] = await Promise.all([
       sql(env, 'SELECT * FROM classes ORDER BY grade,class_number').all(),
       sql(env, 'SELECT a.*,c.name class_name FROM activities a JOIN classes c ON c.id=a.class_id ORDER BY a.opens_at DESC').all(),
       sql(env, 'SELECT id,grade,class_number,student_number,name,enabled FROM students ORDER BY grade,class_number,student_number LIMIT 2000').all(),
@@ -58,15 +61,16 @@ async function admin(request: Request, env: Env, session: Session, url: URL) {
       sql(env, 'SELECT * FROM writing_genres ORDER BY rowid').all(),
       sql(env, 'SELECT * FROM activity_rooms ORDER BY grade,class_number').all(),
       sql(env, 'SELECT * FROM activity_participants').all(),
+      storageUsage(env),
     ]);
-    return json({ classes: classes.results, activities: activities.results, students: students.results, settings: settings.results, backups: backups.results, styles: styles.results, rooms:rooms.results, assignments:assignments.results, genres:genres.results, activityRooms:activityRooms.results, activityAssignments:activityAssignments.results });
+    return json({ classes: classes.results, activities: activities.results, students: students.results, settings: settings.results, backups: backups.results, styles: styles.results, rooms:rooms.results, assignments:assignments.results, genres:genres.results, activityRooms:activityRooms.results, activityAssignments:activityAssignments.results, storage });
   }
   if (route === '/api/admin/classes' && request.method === 'POST') {
     const v = classSchema.parse(await body(request));
     const id = crypto.randomUUID();
     const rooms=v.rooms ?? (v.grade&&v.classNumber?[{grade:v.grade,classNumber:v.classNumber}]:[]);
     assert(new Set(rooms.map(r=>`${r.grade}:${r.classNumber}`)).size===rooms.length,400,'DUPLICATE_ROOMS','배정된 반이 중복되었습니다.');
-    await env.DB.batch([sql(env, 'INSERT INTO classes(id,name,grade,class_number) VALUES(?,?,?,?)', id, v.name, v.grade??null, v.classNumber??null),...rooms.map(r=>sql(env,'INSERT INTO class_rooms(class_id,grade,class_number) VALUES(?,?,?)',id,r.grade,r.classNumber))]);
+    await env.DB.batch([sql(env, 'INSERT INTO classes(id,name,grade,class_number) VALUES(?,?,?,?)', id, v.name, v.grade??null, v.classNumber??null),...participantInserts(env,'class',id,{rooms,students:[]})]);
     return json({ id }, 201);
   }
   const assignmentMatch=route.match(/^\/api\/admin\/classes\/([\w-]+)\/assignments$/);
@@ -78,10 +82,11 @@ async function admin(request: Request, env: Env, session: Session, url: URL) {
   }
   if (route === '/api/admin/students' && request.method === 'POST') return registerRoster(request, env);
   if (route === '/api/admin/passwords/reset' && request.method === 'POST') {
-    const { studentIds } = z.object({ studentIds: z.array(z.string().uuid()).min(1).max(300) }).parse(await body(request));
+    const { studentIds } = z.object({ studentIds: z.array(z.string().uuid()).min(1).max(20) }).parse(await body(request));
     assert(new Set(studentIds).size === studentIds.length, 400, 'DUPLICATE_IDS', '학생이 중복되었습니다.');
-    const rows = await Promise.all(studentIds.map(async (id) => {
-      const s = await studentById(env, id);
+    const selected = await sql(env, `SELECT id,grade,class_number,student_number,name FROM students WHERE id IN (${studentIds.map(() => '?').join(',')})`, ...studentIds).all<Student>();
+    assert(selected.results.length === studentIds.length, 404, 'STUDENT_NOT_FOUND', '등록된 학생을 선택해 주세요.');
+    const rows = await Promise.all(selected.results.map(async (s) => {
       const password = crypto.randomUUID().replaceAll('-', '').slice(0, 10);
       const salt = crypto.randomUUID();
       return { ...s, password, salt, hash: await passwordHash(password, salt) };
@@ -276,8 +281,7 @@ async function route(request: Request, env: Env) {
   throw new ApiError(404, 'NOT_FOUND', '요청을 찾을 수 없습니다.');
 }
 
-export default {
-  async fetch(request: Request, env: Env) {
+export async function serve(request: Request, env: Env) {
     let response: Response;
     try { response = await route(request, env); }
     catch (error) {
@@ -289,12 +293,24 @@ export default {
         response = json({ code: conflict ? 'CONFLICT' : 'INTERNAL_ERROR', error: conflict ? '이미 등록된 항목입니다. 새로고침 후 확인해 주세요.' : '요청을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.' }, conflict ? 409 : 500);
       }
     }
+    // Routes such as join/pin may not need a body. Release the forwarded stream
+    // before responding, including uploads rejected before taking a body slot.
+    if (request.body && !request.bodyUsed) await request.body.cancel().catch(() => {});
     const secured = new Response(response.body, response);
     secured.headers.set('X-Content-Type-Options', 'nosniff');
     secured.headers.set('Referrer-Policy', 'same-origin');
     if (new URL(request.url).pathname.startsWith('/api/')) secured.headers.set('Cache-Control', 'private, no-store');
     return secured;
+}
+
+export { ClassroomTasks } from './tasks';
+export default {
+  async fetch(request: Request, env: Env) {
+    // Free Workers have a 10ms CPU budget. SQLite-backed Durable Objects are
+    // available on Free and provide 30s for API/hash/image/JSON processing.
+    if (new URL(request.url).pathname.startsWith('/api/')) return env.TASKS.getByName('api').fetch(request);
+    return serve(request, env);
   },
   queue: processBatch,
-  scheduled: recoverJobs,
+  async scheduled(_controller: ScheduledController, env: Env) { await env.JOBS.send({ stage: 'maintenance' }); },
 } satisfies ExportedHandler<Env>;

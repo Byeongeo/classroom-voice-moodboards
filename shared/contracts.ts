@@ -5,6 +5,7 @@ export const MODELS = {
   image: 'openai/gpt-image-2',
   analysis: 'openai/gpt-4.1',
 } as const;
+export const ANALYSIS_VERSION = 'ko-openrouter-rubric-v3';
 export const rubricSchema = z.array(z.object({ id: z.string().min(1).max(60), label: z.string().trim().min(1).max(50), description: z.string().trim().min(1).max(500) })).max(8).refine((r) => new Set(r.map((c) => c.id)).size === r.length, '평가 기준 ID가 중복되었습니다.');
 export const DEFAULT_RUBRIC = [
   { id: 'subject', label: '대상의 구체성', description: '무엇을 묘사하는지 대상과 특징을 분명히 드러낸다.' },
@@ -37,7 +38,7 @@ export const loginSchema = identitySchema.extend({ password: z.string().min(6).m
 export const rosterSchema = z.object({ students: z.array(identitySchema.extend({
   password: z.string().min(6).max(128).optional(),
   commandLimit: z.number().int().min(0).max(200).default(10),
-})).min(1).max(300) });
+})).min(1).max(25) });
 export const commandSchema = z.object({
   requestId: z.string().uuid(),
   transcript: z.string().trim().min(1).max(1500),
@@ -122,4 +123,18 @@ export type Morphology = {
   metrics: { contentWords: number; uniqueContentWords: number; lexicalDiversity: number; modifiers: number; negationMarkers: number };
   keywords: { word: string; count: number }[];
 };
-export type Analysis = { morphology: Morphology; semantic: SemanticAnalysis; score: number | null; rubric: Rubric; version: string; model: string };
+export const languageSchema = z.object({
+  keywords: z.array(z.string().trim().min(1).max(60)).max(20),
+  expressions: z.array(z.object({
+    quote: z.string().min(1).max(300),
+    category: z.enum(['subject', 'attributes', 'relations', 'quantity', 'negation']),
+    explanation: z.string().min(1).max(300),
+  })).max(12),
+});
+export type LanguageFeatures = {
+  engine: 'openrouter-ko-evidence';
+  keywords: { word: string; count: number }[];
+  expressions: z.infer<typeof languageSchema>['expressions'];
+};
+// Optional morphology keeps previously stored Stanza observations readable.
+export type Analysis = { language?: LanguageFeatures; morphology?: Morphology; semantic: SemanticAnalysis; score: number | null; rubric: Rubric; version: string; model: string };

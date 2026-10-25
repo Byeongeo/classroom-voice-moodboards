@@ -19,14 +19,25 @@ export async function validateParticipants(env: Env, targets: AssignmentTargets)
   const ids = new Set(registered.results.map(student => student.id));
   assert(targets.students.every(student => ids.has(student.studentId)), 400, 'STUDENT_NOT_FOUND', '등록된 학생만 배정할 수 있습니다.');
 }
+export function participantInserts(env: Env, scope: 'class' | 'activity', id: string, targets: AssignmentTargets) {
+  const statements: D1PreparedStatement[] = [];
+  const groups = [
+    { table: `${scope}_rooms`, columns: `${scope}_id,grade,class_number`, rows: targets.rooms.map(r => [r.grade, r.classNumber]) },
+    { table: scope === 'class' ? 'class_students' : 'activity_participants', columns: `${scope}_id,student_id,access`, rows: targets.students.map(s => [s.studentId, s.access ? 1 : 0]) },
+  ];
+  for (const group of groups) for (let offset = 0; offset < group.rows.length; offset += 25) {
+    const page = group.rows.slice(offset, offset + 25);
+    statements.push(sql(env, `INSERT INTO ${group.table}(${group.columns}) VALUES ${page.map(() => '(?,?,?)').join(',')}`, ...page.flatMap(row => [id, ...row])));
+  }
+  return statements;
+}
 export function activityAssignmentStatements(env: Env, activityId: string, assignment: ActivityAssignment) {
   return [
     sql(env, 'UPDATE activities SET assignment_mode=? WHERE id=?', assignment.mode, activityId),
     sql(env, 'DELETE FROM activity_rooms WHERE activity_id=?', activityId),
     sql(env, 'DELETE FROM activity_participants WHERE activity_id=?', activityId),
     ...(assignment.mode === 'custom' ? [
-      ...assignment.rooms.map(room => sql(env, 'INSERT INTO activity_rooms(activity_id,grade,class_number) VALUES(?,?,?)', activityId, room.grade, room.classNumber)),
-      ...assignment.students.map(student => sql(env, 'INSERT INTO activity_participants(activity_id,student_id,access) VALUES(?,?,?)', activityId, student.studentId, student.access ? 1 : 0)),
+      ...participantInserts(env, 'activity', activityId, assignment),
     ] : []),
   ];
 }
@@ -48,8 +59,7 @@ export async function assignClass(request: Request, env: Env, classId: string) {
   await env.DB.batch([
     sql(env, 'DELETE FROM class_rooms WHERE class_id=?', classId),
     sql(env, 'DELETE FROM class_students WHERE class_id=?', classId),
-    ...v.rooms.map(r=>sql(env, 'INSERT INTO class_rooms(class_id,grade,class_number) VALUES(?,?,?)', classId,r.grade,r.classNumber)),
-    ...v.students.map(s=>sql(env, 'INSERT INTO class_students(class_id,student_id,access) VALUES(?,?,?)', classId,s.studentId,s.access?1:0)),
+    ...participantInserts(env, 'class', classId, v),
   ]);
   return json({ok:true});
 }

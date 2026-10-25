@@ -2,13 +2,14 @@ export interface Env {
   DB: D1Database;
   IMAGES: R2Bucket;
   JOBS: Queue<Job>;
+  TASKS: DurableObjectNamespace;
   ASSETS: Fetcher;
-  NLP_SERVICE: Fetcher;
   OPENROUTER_API_KEY: string;
   TEACHER_PASSWORD: string;
   MAX_CLASS_COMMANDS_PER_DAY?: string;
+  MAX_STORAGE_BYTES?: string;
 }
-export type Job = { eventId: string; stage: 'generation' | 'analysis' } | { backupId: string; stage: 'backup' };
+export type Job = { eventId: string; stage: 'generation' | 'analysis' } | { backupId: string; stage: 'backup' } | { stage: 'maintenance' };
 export type Session = { role: 'student' | 'teacher'; student_id: string | null };
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }

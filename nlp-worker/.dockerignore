@@ -1,9 +1,0 @@
-node_modules
-.wrangler
-output
-__pycache__
-*.pyc
-*.log
-.env*
-.dev.vars*
-.git

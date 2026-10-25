@@ -3,8 +3,9 @@ import { INTENT_PROMPT } from './prompts';
 import { ApiError, now, sql, type Env, type Job } from './env';
 import { generateImage, ProviderError, textCompletion } from './openrouter';
 import { analyze } from './analysis';
-import { processBackup, expireBackups } from './backup';
+import { expireBackups } from './backup';
 import { recoverUploads } from './images';
+import { putObject, recordExistingObject, checkStorageAvailable } from './storage';
 
 type StoredEvent = {
   id: string; student_id: string; activity_id: string; board_id: string; transcript: string;
@@ -40,7 +41,7 @@ export async function runGeneration(env: Env, id: string): Promise<'done' | 'bus
   try {
     // R2 checkpoint survives a failure between object upload and the D1 transaction.
     const checkpoint = await env.IMAGES.head(objectKey(event));
-    if (checkpoint) { await finishImage(env, event, checkpoint); return 'done'; }
+    if (checkpoint) { await recordExistingObject(env, objectKey(event), checkpoint.size); await finishImage(env, event, checkpoint); return 'done'; }
     if (event.attempts > 3) throw new ProviderError(false, 'RETRY_LIMIT');
     const board = await sql(env, 'SELECT * FROM boards WHERE id=? AND student_id=?', event.board_id, event.student_id).first<Board>();
     if (!board) throw new ApiError(404, 'BOARD_NOT_FOUND', 'Board unavailable');
@@ -70,14 +71,15 @@ export async function runGeneration(env: Env, id: string): Promise<'done' | 'bus
       reference = { bytes: new Uint8Array(await stored.arrayBuffer()), mime: source.mime_type };
     }
     const prompt = `${event.style_prompt}\nTheme: ${event.theme || board.title}\n${event.action === 'EDIT_ACTIVE' ? 'Edit the provided reference image, keeping the existing subject. Instruction: ' : 'Subject and composition: '}${event.prompt}`;
+    await checkStorageAvailable(env);
     const image = await generateImage(env, prompt, reference);
-    const stored = await env.IMAGES.put(objectKey(event), image.bytes, { httpMetadata: { contentType: image.mime }, customMetadata: { eventId: id } });
+    const stored = await putObject(env, objectKey(event), image.bytes, image.bytes.byteLength, { httpMetadata: { contentType: image.mime }, customMetadata: { eventId: id } });
     if (!stored) throw new Error('R2_WRITE_FAILED');
     await finishImage(env, event, stored);
     return 'done';
   } catch (error) {
     const code = error instanceof ApiError ? error.code : 'GENERATION_STORAGE_ERROR';
-    const permanent = (error instanceof ProviderError && !error.retryable) || (error instanceof ApiError && !(error instanceof ProviderError)) || event.attempts >= 3;
+    const permanent = (error instanceof ProviderError && !error.retryable) || (error instanceof ApiError && !(error instanceof ProviderError) && error.status !== 503) || event.attempts >= 3;
     await sql(env, 'UPDATE events SET status=?,lease_until=0,error_code=?,updated_at=? WHERE id=?', permanent ? 'failed' : 'queued', code, now(), id).run();
     console.error(JSON.stringify({ type: 'generation_error', eventId: id, code, retry: !permanent }));
     if (!permanent) throw error;
@@ -108,8 +110,10 @@ export async function processBatch(batch: MessageBatch<Job>, env: Env) {
   for (const message of batch.messages) {
     try {
       const job = message.body;
-      if (job.stage === 'backup') { await processBackup(env, job.backupId); message.ack(); continue; }
-      const status = job.stage === 'generation' ? await runGeneration(env, job.eventId) : await runAnalysis(env, job.eventId);
+      const taskName = job.stage === 'maintenance' ? 'maintenance' : job.stage === 'backup' ? `backup:${job.backupId}` : `event:${job.eventId}`;
+      const response = await env.TASKS.getByName(taskName).fetch('https://tasks.internal/internal/job', { method: 'POST', body: JSON.stringify(job) });
+      if (!response.ok) throw new Error('TASK_FAILED');
+      const { status } = await response.json() as {status:string};
       if (status === 'busy') { message.retry({ delaySeconds: 30 }); continue; }
       if (job.stage === 'generation') {
         try { await env.JOBS.send({ stage: 'analysis', eventId: job.eventId }); } catch { /* recovered by cron */ }
@@ -122,15 +126,15 @@ export async function processBatch(batch: MessageBatch<Job>, env: Env) {
 export async function recoverJobs(_controller: ScheduledController, env: Env) {
   const timestamp = now();
   const generation = await sql(env, `SELECT id FROM events WHERE kind='command' AND (
-    (status='queued' AND (dispatched_at IS NULL OR dispatched_at<?)) OR (status='processing' AND lease_until<?)) LIMIT 100`, timestamp - 600_000, timestamp).all<{id:string}>();
+    (status='queued' AND (dispatched_at IS NULL OR dispatched_at<?)) OR (status='processing' AND lease_until<?)) LIMIT 4`, timestamp - 600_000, timestamp).all<{id:string}>();
   for (const row of generation.results) {
     await env.JOBS.send({ stage: 'generation', eventId: row.id });
     await sql(env, 'UPDATE events SET dispatched_at=? WHERE id=?', timestamp, row.id).run();
   }
   const analysis = await sql(env, `SELECT id FROM events WHERE status NOT IN ('queued','processing')
-    AND (analysis_status='pending' OR (analysis_status='processing' AND analysis_lease_until<?)) LIMIT 100`, timestamp).all<{id:string}>();
+    AND (analysis_status='pending' OR (analysis_status='processing' AND analysis_lease_until<?)) LIMIT 4`, timestamp).all<{id:string}>();
   for (const row of analysis.results) await env.JOBS.send({ stage: 'analysis', eventId: row.id });
-  const backups = await sql(env, "SELECT id FROM backups WHERE status IN ('queued','processing') AND lease_until<? LIMIT 10", timestamp).all<{id:string}>();
+  const backups = await sql(env, "SELECT id FROM backups WHERE status IN ('queued','processing') AND lease_until<? LIMIT 1", timestamp).all<{id:string}>();
   for (const row of backups.results) await env.JOBS.send({ stage: 'backup', backupId: row.id });
   await env.DB.batch([sql(env, 'DELETE FROM sessions WHERE expires_at<?', timestamp), sql(env, 'DELETE FROM login_limits WHERE expires_at<?', timestamp)]);
   await expireBackups(env);

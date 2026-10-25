@@ -24,5 +24,4 @@ jobs:
       - run: pnpm publish:check
       - run: pnpm lint
       - run: pnpm test
-      - run: pnpm build
-      - run: pnpm nlp:check
+      - run: pnpm deploy:check

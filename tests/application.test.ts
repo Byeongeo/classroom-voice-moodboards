@@ -5,10 +5,13 @@ import worker from '../worker/index';
 import { DEFAULT_RUBRIC, MODELS } from '../shared/contracts';
 import { runAnalysis, runGeneration, recoverJobs } from '../worker/jobs';
 import { processBackup, expireBackups } from '../worker/backup';
-import { validateSemantic } from '../worker/analysis';
+import { validateLanguage, validateSemantic } from '../worker/analysis';
+import { ClassroomTasks } from '../worker/tasks';
+import { storageUsage, reserveObject } from '../worker/storage';
 import { normalizeXlsx, readRoster, validateRows } from '../src/roster';
 import { splitBackupFiles } from '../src/backupFiles';
 import type { Env, Job } from '../worker/env';
+import { applyMigrations } from './migrations';
 
 const storage = new Miniflare(convertV4MiniflareOptions({ modules: true, script: 'export default { fetch() { return new Response("storage harness"); } };', compatibilityDate: '2026-10-19', d1Databases: ['DB'], r2Buckets: ['IMAGES'] }));
 const env = {} as { DB: D1Database; IMAGES: R2Bucket };
@@ -27,6 +30,7 @@ function semantic(text=utterance, rubric=DEFAULT_RUBRIC) {
   return { interpretation:'노란 우비를 입은 아이 세 명과 우체통의 위치를 묘사한다.',
     specificity:{subject:3,attributes:3,relations:2,quantity:3,evidence:[{quote:text,explanation:'현재 발화의 구체적인 설명'}]},
     irony:{label:'unlikely',evidence:[]},negation:{label:'none',resolvedMeaning:'부정 표현이 없다.',evidence:[]},needsReview:false,
+    language:{keywords:[text.slice(0,12)],expressions:[{quote:text,category:'subject',explanation:'현재 발화의 표현'}]},
     rubricScores:rubric.map((r)=>({id:r.id,score:3,evidence:[{quote:text,explanation:'현재 발화 근거'}]})) };
 }
 async function call(path:string,method='GET',data?:unknown,cookie='') {
@@ -42,15 +46,16 @@ beforeAll(async()=>{
   mkdirSync('output', { recursive: true });
   env.DB = await storage.getD1Database('DB') as unknown as D1Database;
   env.IMAGES = await storage.getR2Bucket('IMAGES') as unknown as R2Bucket;
-  for (const file of readdirSync('migrations').filter((f)=>f.endsWith('.sql')).sort()) for (const statement of readFileSync('migrations/'+file,'utf8').split(';').map((s)=>s.trim()).filter(Boolean)) await env.DB.prepare(statement).run();
+  await applyMigrations(env.DB);
   apiEnv={DB:env.DB,IMAGES:env.IMAGES,OPENROUTER_API_KEY:'test-openrouter-key',TEACHER_PASSWORD:teacherPassword,MAX_CLASS_COMMANDS_PER_DAY:'900',
     JOBS:{send:async(job:Job)=>{jobs.push(job);}} as any,
-    NLP_SERVICE:{fetch:async()=>Response.json({engine:'stanza-ko-gsd',version:'fixture-only',tokens:[{form:'아이',lemma:'아이',tag:'NNG',start:0,len:2,head:0,relation:'root',sentence:0}],metrics:{contentWords:8,uniqueContentWords:8,lexicalDiversity:1,modifiers:3,negationMarkers:0},keywords:[{word:'우체통',count:1}]})} as any,
+    TASKS:{getByName:()=>({fetch:async(input:Request|string,init?:RequestInit)=>new ClassroomTasks({} as DurableObjectState,apiEnv).fetch(input instanceof Request?input:new Request(input,init))})} as any,
     ASSETS:{fetch:async()=>new Response('asset')} as any};
   vi.stubGlobal('fetch',vi.fn(async(url:string,init:RequestInit)=>{
     const data=JSON.parse(init.body as string);
     if(url.endsWith('/images')){imageCalls++;expect(data.model).toBe(MODELS.image);return Response.json({data:[{b64_json:png,media_type:'image/png'}]});}
     const input=JSON.parse(data.messages[1].content);
+    expect(data.provider.data_collection).toBe('deny');
     if(data.model===MODELS.analysis)return Response.json({choices:[{message:{content:JSON.stringify(semantic(input.original,input.rubric))}}]});
     const action=input.transcript==='삭제'?'DISCARD_ACTIVE':input.transcript==='음'?'IGNORE':input.transcript.includes('수정')?'EDIT_ACTIVE':input.activeImagePrompt?'SAVE_AND_NEXT':'START_NEW_THEME';
     return Response.json({choices:[{message:{content:JSON.stringify({action,themeTitle:'우리의 이야기',imagePrompt:['IGNORE','DISCARD_ACTIVE'].includes(action)?null:input.transcript})}}]});
@@ -68,7 +73,7 @@ describe('학생 등록·활동 권한·시간',()=>{
   });
   it('30명의 명단을 한 번에 등록하고 로그인한다',async()=>{
     const roster=Array.from({length:30},(_,i)=>({grade:5,classNumber:2,studentNumber:i+1,name:'예시학생'+(i+1),password:'student-pass'}));
-    const registered=await teacher('/api/admin/students','POST',{students:roster});expect(registered.status).toBe(201);expect((await value(registered)).registered).toBe(30);
+    let registeredCount=0;for(let offset=0;offset<roster.length;offset+=25){const registered=await teacher('/api/admin/students','POST',{students:roster.slice(offset,offset+25)});expect(registered.status).toBe(201);registeredCount+=(await value(registered)).registered;}expect(registeredCount).toBe(30);
     students=await Promise.all(roster.map(async(s)=>{
       const response=await call('/api/login','POST',s);expect(response.status).toBe(200);const cookie=cookieOf(response);const me=await value(await call('/api/me','GET',undefined,cookie));
       expect(JSON.stringify(me)).not.toContain('password_hash');
@@ -123,7 +128,7 @@ describe('30명 동시 요청과 영구 저장',()=>{
     const r=await value(await command(students[1]));const before=imageCalls;let fail=true;
     const flaky={...apiEnv,DB:{prepare:(q:string)=>env.DB.prepare(q),batch:async(statements:D1PreparedStatement[])=>{if(fail){fail=false;throw new Error('simulated D1 outage');}return env.DB.batch(statements);}}} as Env;
     await expect(runGeneration(flaky,r.eventId)).rejects.toThrow();
-    expect(imageCalls).toBe(before+1);await runGeneration(apiEnv,r.eventId);expect(imageCalls).toBe(before+1);
+    expect(imageCalls).toBe(before+1);await runGeneration({...apiEnv,MAX_STORAGE_BYTES:'1'},r.eventId);expect(imageCalls).toBe(before+1);
     expect((await env.DB.prepare('SELECT status FROM events WHERE id=?').bind(r.eventId).first<any>()).status).toBe('succeeded');
   });
   it('학생별 한도와 동시 제출을 서버에서 막는다',async()=>{
@@ -251,7 +256,7 @@ describe('확장된 배정·비밀번호·이미지 전체 이력',()=>{
   });
   it('30명 전원의 비밀번호를 자동 발급하고 비밀번호만으로 미배정 활동에 들어가지 못하게 한다',async()=>{
     const roster=Array.from({length:30},(_,i)=>({grade:7,classNumber:1,studentNumber:i+1,name:'자동발급'+(i+1)}));
-    const result=await value(await teacher('/api/admin/students','POST',{students:roster}));expect(result.credentials).toHaveLength(30);expect(new Set(result.credentials.map((s:any)=>s.password)).size).toBe(30);
+    const result:{credentials:any[]}={credentials:[]};for(let offset=0;offset<roster.length;offset+=25){const r=await teacher('/api/admin/students','POST',{students:roster.slice(offset,offset+25)});expect(r.status).toBe(201);result.credentials.push(...(await value(r)).credentials);}expect(result.credentials).toHaveLength(30);expect(new Set(result.credentials.map((s:any)=>s.password)).size).toBe(30);
     const login=await call('/api/login','POST',result.credentials[0]);expect(login.status).toBe(200);const cookie=cookieOf(login);
     expect((await value(await call('/api/activities','GET',undefined,cookie))).activities).toEqual([]);
     expect((await call('/api/activities/'+activityId+'/join','POST',{},cookie)).status).toBe(404);
@@ -287,6 +292,44 @@ describe('확장된 배정·비밀번호·이미지 전체 이력',()=>{
     let next:any=null;const all:string[]=[];do{const query=next?'?'+new URLSearchParams({afterTime:String(next.afterTime),afterId:next.afterId}):'';const page=await value(await call('/api/activities/'+a.id+'/image-actions'+query,'GET',undefined,s.cookie));all.push(...page.rows.map((r:any)=>r.id));next=page.next;}while(next);expect(all).toHaveLength(212);expect(new Set(all).size).toBe(212);
     const badRequest=(mime:string,body:BodyInit)=>worker.fetch(new Request(origin+'/api/activities/'+a.id+'/uploads',{method:'POST',headers:{Cookie:s.cookie,Origin:origin,'Content-Type':mime,'X-Upload-ID':crypto.randomUUID()},body}),apiEnv);
     expect((await badRequest('image/svg+xml','<svg/>')).status).toBe(415);expect((await badRequest('image/png','not-an-image')).status).toBe(400);expect((await badRequest('image/jpeg',bytes)).status).toBe(400);
+  });
+});
+
+describe('OpenRouter 원문 분석과 무료 저장 상한',()=>{
+  it('저장 상한 도달 시 유료 이미지 호출 전에 중단하고 발화와 기존 원본은 남긴다',async()=>{
+    const usage=await storageUsage(apiEnv);const before=imageCalls;
+    const accepted=await value(await command(students[10]));
+    await runGeneration({...apiEnv,MAX_STORAGE_BYTES:String(usage.bytes)},accepted.eventId);
+    const record=await env.DB.prepare('SELECT transcript,status,error_code FROM events WHERE id=?').bind(accepted.eventId).first<any>();
+    expect(record).toEqual({transcript:utterance,status:'failed',error_code:'STORAGE_LIMIT'});expect(imageCalls).toBe(before);
+    expect((await storageUsage(apiEnv)).bytes).toBe(usage.bytes);
+  });
+  it('이전 백업의 임시 예약은 새 파일 저장 전에 R2 실제 용량으로 보정한다',async()=>{
+    const before=await storageUsage(apiEnv);const id=crypto.randomUUID();const created=Date.now()-100000;const key=`backups/${id}/manifest.json`;
+    const data='{"version":1,"files":[]}';const bytes=new TextEncoder().encode(data).byteLength;
+    await env.DB.prepare("INSERT INTO backups(id,status,manifest_key,created_at,expires_at) VALUES(?,'ready',?,?,?)").bind(id,key,created,Date.now()+100000).run();
+    await env.IMAGES.put(key,data);
+    await env.DB.prepare('INSERT INTO storage_objects(object_key,byte_size,updated_at) VALUES(?,?,?)').bind(key,1048576,created).run();
+    await reserveObject(apiEnv,'legacy-reconcile-test',100);
+    expect((await storageUsage(apiEnv)).bytes).toBe(before.bytes+bytes+100);
+    await env.IMAGES.delete(key);await env.DB.prepare('DELETE FROM storage_objects WHERE object_key IN (?,?)').bind(key,'legacy-reconcile-test').run();await env.DB.prepare('DELETE FROM backups WHERE id=?').bind(id).run();
+    expect((await storageUsage(apiEnv)).bytes).toBe(before.bytes);
+  });
+  it('핵심 표현은 원문에 있는 표현만 허용하고 빈도를 서버에서 센다',()=>{
+    const result=validateLanguage({keywords:['꽃','꽃','집'],expressions:[{quote:'꽃 두 송이',category:'quantity',explanation:'수량을 명시함'}]},'집 앞에 꽃 두 송이와 꽃 한 송이');
+    expect(result.keywords).toEqual([{word:'꽃',count:2},{word:'집',count:1}]);
+    expect(()=>validateLanguage({keywords:['장미'],expressions:[]},'꽃 두 송이')).toThrow('UNGROUNDED_LANGUAGE');
+    expect(()=>validateLanguage({keywords:[],expressions:[{quote:'빨간',category:'attributes',explanation:'원문에 없음'}]},'꽃 두 송이')).toThrow('UNGROUNDED_LANGUAGE');
+  });
+  it('30개 동시 용량 예약도 상한을 넘기지 않고 재시도는 이중 계산하지 않는다',async()=>{
+    const before=await storageUsage(apiEnv);const limited={...apiEnv,MAX_STORAGE_BYTES:String(before.bytes+500)};
+    const keys=Array.from({length:30},(_,i)=>'quota-test/'+i);
+    const results=await Promise.allSettled(keys.map(key=>reserveObject(limited,key,100)));
+    const accepted=results.flatMap((r,i)=>r.status==='fulfilled'?[keys[i]]:[]);
+    expect(accepted).toHaveLength(5);expect((await storageUsage(apiEnv)).bytes).toBe(before.bytes+500);
+    await reserveObject(limited,accepted[0],100);expect((await storageUsage(apiEnv)).bytes).toBe(before.bytes+500);
+    await env.DB.prepare("DELETE FROM storage_objects WHERE object_key LIKE 'quota-test/%'").run();
+    expect((await storageUsage(apiEnv)).bytes).toBe(before.bytes);
   });
 });
 
