@@ -1,5 +1,5 @@
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
 import worker from '../worker/index';
 import { DEFAULT_RUBRIC, MODELS } from '../shared/contracts';
@@ -39,6 +39,7 @@ async function command(s=students[0],text=utterance,requestId=crypto.randomUUID(
   return call('/api/activities/'+activity+'/commands','POST',{requestId,transcript:text,inputMethod:'speech',recognizedText:text,styleId:style},s.cookie);
 }
 beforeAll(async()=>{
+  mkdirSync('output', { recursive: true });
   env.DB = await storage.getD1Database('DB') as unknown as D1Database;
   env.IMAGES = await storage.getR2Bucket('IMAGES') as unknown as R2Bucket;
   for (const file of readdirSync('migrations').filter((f)=>f.endsWith('.sql')).sort()) for (const statement of readFileSync('migrations/'+file,'utf8').split(';').map((s)=>s.trim()).filter(Boolean)) await env.DB.prepare(statement).run();
