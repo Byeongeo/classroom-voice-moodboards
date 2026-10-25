@@ -12,8 +12,9 @@
     "lint": "node node_modules/typescript/bin/tsc --noEmit",
     "test": "node node_modules/vitest/vitest.mjs run",
     "db:local": "node node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --local",
-    "db:remote": "node node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --remote",
-    "deploy": "npm run build && node scripts/check-deploy.mjs && node node_modules/wrangler/bin/wrangler.js deploy",
+    "cloud:config": "node scripts/setup-cloud.mjs",
+    "db:remote": "node node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --remote --config output/wrangler.production.jsonc",
+    "deploy": "npm run build && node scripts/check-deploy.mjs && node node_modules/wrangler/bin/wrangler.js deploy --config output/wrangler.production.jsonc",
     "deploy:check": "npm run build && node node_modules/wrangler/bin/wrangler.js deploy --dry-run",
     "publish:check": "node scripts/check-publication.mjs",
     "test:load": "node node_modules/vitest/vitest.mjs run tests/workerd-load.test.ts"

@@ -25,11 +25,19 @@
 | 실제 OpenRouter 분석 | 합성 예문 7개 스키마·원문 인용·표현 검증·기대 범위 통과 |
 | 실제 생성·참조 수정 | 새 합성 학생/활동에서 2건. 20.7초·20.6초, JPEG 272,708·254,537바이트 저장 및 새 분석 완료 |
 | 실제 제거·재조회 | 생성/수정/보관/제거 4개 이력, 제거 후 두 원본 해시·부모 연결 보존. 같은 요청 번호 중복 처리 방지 |
-| 운영 Cloudflare | R2 활성화 필요 오류 10042. 원격 배포·무료 CPU/계정 한도·30명 운영 부하는 아직 미검증 |
+| 운영 Cloudflare | Spiffy Jute 계정에 Workers·SQLite DO·Queues·D1·비공개 R2 배포 완료. 운영 URL에서 실제 OpenRouter 30명 동시 로그인·제출·생성·분석 성공 |
+| 운영 응답·지연 | 30명 로그인 전체 2.9초, 제출 p95 4.55초·최대 5.63초. 최초 30장과 분석 완료 약 236초. 최초 큐 확장 지연과 중간 배포 조정 포함 |
+| 운영 파일·권한 | 실제 생성 30장·참조 수정 1장·업로드 30장, 기록 61건·작업 이력 93건. 원본 61개 SHA-256 재조회·다른 학생/비로그인 접근 차단·같은 요청 중복 방지 확인 |
+| 운영 업로드 | 787,252바이트 PNG 30개 동시 제출, 30.7초에 모두 저장. 혼잡 응답 50건은 같은 업로드 ID로 재시도해 파일 중복 없음 |
+| 운영 백업·무결성 | 원본 합계 31,235,502바이트. 백업 ready 완료 후 이미지 사본 61개도 원본 SHA-256과 전부 일치. 화면에서 제거한 31개 원본과 사본 모두 보존 |
+| 운영 버킷 공개 설정 | r2.dev 비활성·연결된 공개 사용자 지정 도메인 없음 |
+| 운영 CPU 표본 | 검증 후반 실행 모델을 구분한 tail 표본 608건 모두 ok. 일반 Worker 346건: HTTP 최대 CPU 2ms·큐 최대 1ms. DO 262건: 최대 CPU 59ms. 검증 전체나 장기 계정 한도를 보장하는 수치는 아님 |
 
-원시 결과는 Git에서 제외한 output/workerd-load-results.json, load-results.json, upload-load-results.json, live-free-check.json, live-language-check.json에 있습니다. 실제 API 시험은 합성 학생·발화만 사용했고 API 키·비밀번호는 보고서에 넣지 않았습니다. 생성된 검증용 클래스·활동은 숨김 처리하되 기록은 남겼습니다.
+원시 결과는 Git에서 제외한 output/workerd-load-results.json, load-results.json, upload-load-results.json, live-free-check.json, live-language-check.json, live-cloud-load-results.json에 있습니다. 실제 API 시험은 합성 학생·발화만 사용했고 API 키·비밀번호는 보고서에 넣지 않았습니다. 검증용 클래스·활동은 종료 후 숨김 처리하고 해당 합성 학생 30명은 비활성화했습니다. 발화·이미지·분석·백업 기록은 남겼습니다. 로컬 실학생 자료를 운영 DB로 옮기지 않았습니다.
 
-첫 통합 시험은 Node 핸들러 + 실제 로컬 workerd D1/R2와 모의 큐/AI로 동시 생성 6개를 확인합니다. 새 workerd 시험은 모든 핸들러·DO·로컬 큐·저장소를 실제 런타임에서 실행하고 AI만 모의 응답합니다. Miniflare 자동 소비자는 순차 실행하므로, 추가 작업 Object 5개를 병행 호출해 실제 workerd에서 처리 동시성 6개도 확인했습니다. 실제 운영 Cloudflare 큐의 처리량을 측정한 것은 아닙니다. localhost 지연은 실제 모델 지연 또는 Cloudflare 운영 부하 측정과 다릅니다.
+운영 주소: https://classroom-voice-moodboards.spiffy-jute-ffc.workers.dev . 운영 시험은 scripts/live-cloud-load-check.mjs --paid로 재현하며 LIVE_BASE_URL을 자신의 배포 주소로 설정합니다. 이 명령은 실제 이미지 31장과 문맥 분석을 호출하므로 OpenRouter 비용이 발생합니다. 키·교사 비밀번호는 로컬 .dev.vars에서만 읽고 로그·보고서에 출력하지 않습니다.
+
+첫 통합 시험은 Node 핸들러 + 실제 로컬 workerd D1/R2와 모의 큐/AI로 동시 생성 6개를 확인합니다. 새 workerd 시험은 모든 핸들러·DO·로컬 큐·저장소를 실제 런타임에서 실행하고 AI만 모의 응답합니다. 자동 큐의 배치당 6개 병렬 처리로 동시성 6개를 확인하며, 별도의 작업 Object 직접 호출은 없습니다. localhost 지연은 실제 모델 지연 또는 Cloudflare 운영 부하 측정과 다릅니다.
 
 실제 OpenRouter 예문 7개는 작은 회귀 집합입니다. 문맥 없는 반어는 판단 유보, 문맥 있는 반어도 판단 유보가 가능하며 교사 확인 대상으로 반환했습니다. 일반 정확도·학생 평가 타당도·도구 간 성능 우열을 입증하지 않습니다.
 

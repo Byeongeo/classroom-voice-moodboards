@@ -28,7 +28,7 @@ it('실제 workerd·SQLite Durable Objects·Queues·D1·R2에서 30명 생성/�
     d1Databases:['DB'],r2Buckets:['IMAGES'],durableObjects:{TASKS:{className:'ClassroomTasks',useSQLite:true}},
     bindings:{TEACHER_PASSWORD:'workerd-synthetic-password-only-123456',OPENROUTER_API_KEY:'fixture-only',MAX_CLASS_COMMANDS_PER_DAY:'300',MAX_STORAGE_BYTES:'8000000000'},
     serviceBindings:{ASSETS:async()=>new Response('assets')},
-    queueProducers:{JOBS:'classroom-load-jobs'},queueConsumers:{'classroom-load-jobs':{maxBatchSize:1,maxBatchTimeout:0,maxRetries:3,retryDelay:0}},
+    queueProducers:{JOBS:'classroom-load-jobs'},queueConsumers:{'classroom-load-jobs':{maxBatchSize:6,maxBatchTimeout:0,maxRetries:3,retryDelay:0}},
     outboundService:async(request:Request)=>{
       expect(new URL(request.url).origin).toBe('https://openrouter.ai');
       const data:any=await request.json();
@@ -74,15 +74,6 @@ it('실제 workerd·SQLite Durable Objects·Queues·D1·R2에서 30명 생성/�
     await Promise.all(students.map(async(s)=>value(await request(`/api/activities/${a.id}/join`,'POST',{},s.cookie))));
     const start=performance.now();const latencies:number[]=[];
     const events=await Promise.all(students.map(async(s)=>{const started=performance.now();const response=await request(`/api/activities/${a.id}/commands`,'POST',{requestId:crypto.randomUUID(),transcript:`노란 모자를 쓴 고양이 ${s.studentNumber}마리를 나무 왼쪽에 그려 줘.`,inputMethod:'text',styleId:'illustration'},s.cookie);const result=await value(response);latencies.push(performance.now()-started);return result.eventId;}));
-    // Miniflare's automatic consumer is serial. Exercise five additional real
-    // job Objects beside it, matching the deployed six-job ceiling. D1 leases
-    // and R2 checkpoints prevent duplicate calls when original messages arrive.
-    const namespace=await mf.getDurableObjectNamespace('TASKS');
-    await Promise.all(events.slice(-5).map(async eventId=>{
-      const object=namespace.get(namespace.idFromName(`event:${eventId}`)) as unknown as {fetch:(url:string,init?:RequestInit)=>Promise<Response>};
-      const response=await object.fetch('https://tasks.internal/internal/job',{method:'POST',body:JSON.stringify({stage:'generation',eventId})});
-      expect(response.ok).toBe(true);await response.arrayBuffer();
-    }));
     async function waitFor(sqlText:string,expected:number){
       const deadline=Date.now()+60000;
       while(Date.now()<deadline){const row=await db.prepare(sqlText).first<{n:number}>();if(row?.n===expected)return;await delay(100);}

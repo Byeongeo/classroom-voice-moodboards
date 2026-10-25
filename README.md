@@ -29,7 +29,7 @@
 | SQLite 기반 Durable Objects | 인증·비밀번호 해시·권한·JSON·이미지 처리. Free 지원, 요청당 기본 CPU 30초 |
 | D1 | 명단·클래스·활동·발화·분석·이미지 연결·수정/제거 이력·저장 용량 예약 |
 | 비공개 R2 | 이미지 원본·모든 수정본·백업 사본 |
-| Queues | 이미지/분석/백업 작업, 운영 소비자 최대 6개·배치 1개 |
+| Queues | 이미지/분석/백업 작업, 소비자 1개가 배치당 최대 6개 작업을 병렬 처리 |
 | Cron | 매분 복구 작업을 큐에 등록. 처리 상태는 D1에 남음 |
 | OpenRouter | 서버에서 고정된 모델 호출, 학생에게 API 키를 노출하지 않음 |
 
@@ -86,19 +86,22 @@ pnpm exec wrangler login
 pnpm exec wrangler d1 create classroom-moodboards
 ```
 
-출력된 자신의 database_id를 wrangler.jsonc의 자리표시자에 입력합니다. 연수생마다 자신의 계정·리소스를 사용합니다.
+출력된 자신의 database_id로 운영 설정을 생성합니다. 아래 DATABASE_ID를 실제 값으로 바꿉니다. 이 명령은 output/wrangler.production.jsonc를 만들고 wrangler.jsonc와 기존 로컬 DB는 보존합니다. 연수생마다 자신의 계정·리소스를 사용합니다. 계정이 여럿이면 database_id 뒤에 해당 Cloudflare account_id도 입력합니다.
 
 ```powershell
-pnpm exec wrangler r2 bucket create classroom-moodboard-images
-pnpm exec wrangler queues create classroom-image-jobs
-pnpm exec wrangler queues create classroom-image-jobs-dlq
+pnpm cloud:config DATABASE_ID
+pnpm exec wrangler r2 bucket create classroom-moodboard-images --config output/wrangler.production.jsonc
+pnpm exec wrangler queues create classroom-image-jobs --config output/wrangler.production.jsonc
+pnpm exec wrangler queues create classroom-image-jobs-dlq --config output/wrangler.production.jsonc
 pnpm db:remote
 pnpm deploy
-pnpm exec wrangler secret put OPENROUTER_API_KEY
-pnpm exec wrangler secret put TEACHER_PASSWORD
+pnpm exec wrangler secret put OPENROUTER_API_KEY --config output/wrangler.production.jsonc
+pnpm exec wrangler secret put TEACHER_PASSWORD --config output/wrangler.production.jsonc
 ```
 
 최초 배포 직후 Secrets 설정을 마칩니다. 미설정 상태에서는 로그인을 차단합니다. R2 공개 버킷·r2.dev는 켜지 않습니다. SQLite Durable Object 클래스는 Wrangler migration으로 자동 생성됩니다. 외부 분석 서비스 배포나 컨테이너 빌드는 없습니다.
+
+현재 운영 주소는 https://classroom-voice-moodboards.spiffy-jute-ffc.workers.dev 입니다. 교사 비밀번호는 운영자가 설정한 값이며 저장소에 공개하지 않습니다. 연수생은 자신의 계정에 별도 배포합니다. 운영자의 배포 설정은 Git에서 제외한 output/wrangler.production.jsonc로 분리하여 로컬 DB와 공개 템플릿을 보존합니다.
 
 ## 분석의 의미와 자료 전송
 

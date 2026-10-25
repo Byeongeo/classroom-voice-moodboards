@@ -16,7 +16,7 @@ README의 복제 → pnpm install --frozen-lockfile → .dev.vars 설정 → pnp
 
 Cloudflare Workers Free 계정을 사용합니다. 이미지와 백업을 보관할 R2는 결제수단 등록을 통한 활성화가 필요합니다. R2 무료량 초과는 과금되므로 이 앱 전용 버킷을 만들고 계정 사용량도 확인합니다. Workers Paid 가입과 Containers 배포는 필요하지 않습니다.
 
-README의 D1 생성·자신의 database_id 입력 → R2 버킷·큐 2개 생성 → 원격 DB 마이그레이션 → pnpm deploy → Secrets 2개 설정 순서로 진행합니다. 각 연수생은 자신의 Cloudflare 계정과 OpenRouter 키를 사용합니다. 로컬 학생·이미지를 원격 DB로 자동 복사하지 않습니다.
+README의 D1 생성 → pnpm cloud:config와 자신의 database_id로 운영 설정 생성 → R2 버킷·큐 2개 생성 → 원격 DB 마이그레이션 → pnpm deploy → Secrets 2개 설정 순서로 진행합니다. 운영 설정은 Git에서 제외한 output/wrangler.production.jsonc에 두고 로컬 DB 설정은 보존합니다. 각 연수생은 자신의 Cloudflare 계정과 OpenRouter 키를 사용합니다. 로컬 학생·이미지를 원격 DB로 자동 복사하지 않습니다.
 
 ## 3. 수업 시작 전 확인
 

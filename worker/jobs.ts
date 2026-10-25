@@ -107,20 +107,24 @@ export async function runAnalysis(env: Env, id: string): Promise<'done' | 'busy'
 }
 
 export async function processBatch(batch: MessageBatch<Job>, env: Env) {
-  for (const message of batch.messages) {
+  // One consumer processes up to six jobs in parallel. This gives a new queue
+  // useful concurrency immediately instead of waiting for adaptive scaling.
+  const process = async (message: Message<Job>) => {
     try {
       const job = message.body;
       const taskName = job.stage === 'maintenance' ? 'maintenance' : job.stage === 'backup' ? `backup:${job.backupId}` : `event:${job.eventId}`;
       const response = await env.TASKS.getByName(taskName).fetch('https://tasks.internal/internal/job', { method: 'POST', body: JSON.stringify(job) });
       if (!response.ok) throw new Error('TASK_FAILED');
       const { status } = await response.json() as {status:string};
-      if (status === 'busy') { message.retry({ delaySeconds: 30 }); continue; }
+      if (status === 'busy') { message.retry({ delaySeconds: 30 }); return; }
       if (job.stage === 'generation') {
         try { await env.JOBS.send({ stage: 'analysis', eventId: job.eventId }); } catch { /* recovered by cron */ }
       }
       message.ack();
     } catch { message.retry({ delaySeconds: 30 }); }
-  }
+  };
+  for (let offset = 0; offset < batch.messages.length; offset += 6)
+    await Promise.all(batch.messages.slice(offset, offset + 6).map(process));
 }
 
 export async function recoverJobs(_controller: ScheduledController, env: Env) {
