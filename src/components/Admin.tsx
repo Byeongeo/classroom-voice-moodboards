@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart3, CalendarDays, Download, FolderArchive, KeyRound, Palette, Plus, Printer, RefreshCw, Trash2, Upload, Users } from 'lucide-react';
 import { ANALYSIS_VERSION, type Activity, type ActivityRoom, type ActivityParticipant, type Analysis, type Classroom, type ClassRoom, type ClassStudent, type EventRecord, type ImageAction, type ImageStyle, type Rubric, type Student, type WritingGenre } from '../../shared/contracts';
 import { api, saveFile, statusName, time } from '../api';
@@ -12,6 +12,7 @@ import ImageHistory from './ImageHistory';
 import WritingGenres from './WritingGenres';
 import LanguageEvidence from './LanguageEvidence';
 import StorageUsage, {type StorageUsageData} from './StorageUsage';
+import RemoteImage from './RemoteImage';
 import { splitBackupFiles, type BackupFile } from '../backupFiles';
 
 type Credential = {grade:number;classNumber:number;studentNumber:number;name:string;password:string};
@@ -21,7 +22,7 @@ const parseAnalysis = (event:EventRecord):Analysis|null => {try{return event.ana
 
 function RecordDetail({event,onReview,studentName}:{event:EventRecord;onReview:(id:string,note:string)=>Promise<void>;studentName:string}) {
  const analysis=parseAnalysis(event);const [note,setNote]=useState(event.review_note||'');const [saving,setSaving]=useState(false);
- return <article className="record-detail"><div className="card-top"><span className="fine">{time(event.created_at)} · {event.kind==='upload'?'이미지 업로드':event.input_method==='speech'?'음성':'직접 입력'}</span><span className="badge">{statusName[event.status]}</span></div><blockquote>{event.transcript}</blockquote>{(event as any).recognized_text && (event as any).recognized_text!==event.transcript&&<p className="fine">음성 인식 원문: {(event as any).recognized_text}</p>}<div className="record-content">{event.image_id&&<a href={'/api/images/'+event.image_id} target="_blank" rel="noreferrer"><img src={'/api/images/'+event.image_id} alt={event.prompt||'생성 이미지'} loading="lazy"/></a>}<div>{analysis?<><p><strong>의미 풀이</strong> {analysis.semantic.interpretation}</p><div className="badges"><span className={'badge '+(analysis.semantic.needsReview?'amber':'')}>{analysis.semantic.needsReview?'교사 확인 필요':'자동 분석 제안'}</span><span className="badge">반어: {{likely:'가능성 있음',unlikely:'근거 없음',uncertain:'판단 유보'}[analysis.semantic.irony.label]}</span><span className="badge">부정: {{none:'없음',single:'단일 부정',double:'이중 부정',uncertain:'판단 유보'}[analysis.semantic.negation.label]}</span></div><p className="fine">{analysis.semantic.negation.resolvedMeaning}</p><ScoreDetails rubric={analysis.rubric} values={Object.fromEntries(analysis.semantic.rubricScores.map((r)=>[r.id,r.score]))} observations={[{id:event.id,student:studentName,transcript:event.transcript,createdAt:event.created_at,scores:analysis.semantic.rubricScores}]}/><details><summary>분석 근거와 핵심 표현 보기</summary>{[...analysis.semantic.specificity.evidence,...analysis.semantic.irony.evidence,...analysis.semantic.negation.evidence,...analysis.semantic.rubricScores.flatMap((r)=>r.evidence)].map((e,i)=><p key={i} className="fine"><mark>{e.quote}</mark> — {e.explanation}</p>)}<LanguageEvidence analysis={analysis}/></details></>:<p className="muted">{event.kind==='upload'?'사용자가 업로드한 이미지입니다. 발화 점수는 매기지 않으며 업로드 원본과 이력을 보존합니다.':event.analysis_status==='failed'?'언어 분석에 실패했습니다. 자동 지표를 표시하지 않습니다.': '언어 분석 대기 중입니다.'}</p>}</div></div><label>교사 검토 메모<textarea value={note} onChange={(e)=>setNote(e.target.value)} maxLength={2000} rows={2}/></label><button disabled={saving||!note.trim()} onClick={async()=>{setSaving(true);try{await onReview(event.id,note);}finally{setSaving(false);}}}>{saving?'저장 중…':'검토 메모 저장'}</button></article>;
+ return <article className="record-detail"><div className="card-top"><span className="fine">{time(event.created_at)} · {event.kind==='upload'?'이미지 업로드':event.input_method==='speech'?'음성':'직접 입력'}</span><span className="badge">{statusName[event.status]}</span></div><blockquote>{event.transcript}</blockquote>{(event as any).recognized_text && (event as any).recognized_text!==event.transcript&&<p className="fine">음성 인식 원문: {(event as any).recognized_text}</p>}<div className="record-content">{event.image_id&&<RemoteImage src={'/api/images/'+event.image_id+'?preview=1'} href={'/api/images/'+event.image_id} alt={event.prompt||'생성 이미지'} loading="lazy"/>}<div>{analysis?<><p><strong>의미 풀이</strong> {analysis.semantic.interpretation}</p><div className="badges"><span className={'badge '+(analysis.semantic.needsReview?'amber':'')}>{analysis.semantic.needsReview?'교사 확인 필요':'자동 분석 제안'}</span><span className="badge">반어: {{likely:'가능성 있음',unlikely:'근거 없음',uncertain:'판단 유보'}[analysis.semantic.irony.label]}</span><span className="badge">부정: {{none:'없음',single:'단일 부정',double:'이중 부정',uncertain:'판단 유보'}[analysis.semantic.negation.label]}</span></div><p className="fine">{analysis.semantic.negation.resolvedMeaning}</p><ScoreDetails rubric={analysis.rubric} values={Object.fromEntries(analysis.semantic.rubricScores.map((r)=>[r.id,r.score]))} observations={[{id:event.id,student:studentName,transcript:event.transcript,createdAt:event.created_at,scores:analysis.semantic.rubricScores}]}/><details><summary>분석 근거와 핵심 표현 보기</summary>{[...analysis.semantic.specificity.evidence,...analysis.semantic.irony.evidence,...analysis.semantic.negation.evidence,...analysis.semantic.rubricScores.flatMap((r)=>r.evidence)].map((e,i)=><p key={i} className="fine"><mark>{e.quote}</mark> — {e.explanation}</p>)}<LanguageEvidence analysis={analysis}/></details></>:<p className="muted">{event.kind==='upload'?'사용자가 업로드한 이미지입니다. 발화 점수는 매기지 않으며 업로드 원본과 이력을 보존합니다.':event.analysis_status==='failed'?'언어 분석에 실패했습니다. 자동 지표를 표시하지 않습니다.': '언어 분석 대기 중입니다.'}</p>}</div></div><label>교사 검토 메모<textarea value={note} onChange={(e)=>setNote(e.target.value)} maxLength={2000} rows={2}/></label><button disabled={saving||!note.trim()} onClick={async()=>{setSaving(true);try{await onReview(event.id,note);}finally{setSaving(false);}}}>{saving?'저장 중…':'검토 메모 저장'}</button></article>;
 }
 
 export default function Admin(){
@@ -32,12 +33,37 @@ export default function Admin(){
  const [printCredentials,setPrintCredentials]=useState(false);
  const [largeBackup,setLargeBackup]=useState<{id:string;manifest:any;parts:BackupFile[][]}|null>(null);
  useEffect(()=>setRecordLimit(50),[activityId,studentId]);
- const refresh=useCallback(async()=>{setOverview(await api('/api/admin/overview'));},[]);
- const loadAnalytics=useCallback(async()=>{if(activityId)setAnalytics(await api('/api/admin/analytics?activityId='+activityId));},[activityId]);
- useEffect(()=>{refresh().catch((e)=>setError(e.message));},[refresh]);
+ const currentActivity=useRef(activityId);
+ const pollingData=useRef({analytics,overview});
+ useEffect(()=>{currentActivity.current=activityId;pollingData.current={analytics,overview};},[activityId,analytics,overview]);
+ const refresh=useCallback(async(signal?:AbortSignal)=>{const result=await api<Overview>('/api/admin/overview','GET',undefined,{signal});if(!signal?.aborted)setOverview(result);},[]);
+ const loadAnalytics=useCallback(async(signal?:AbortSignal)=>{if(activityId){const result=await api<Analytics>('/api/admin/analytics?activityId='+activityId,'GET',undefined,{signal});if(!signal?.aborted&&currentActivity.current===activityId)setAnalytics(result);}},[activityId]);
+ useEffect(()=>{const controller=new AbortController();refresh(controller.signal).catch((e)=>{if(!controller.signal.aborted)setError(e.message);});return()=>controller.abort();},[refresh]);
  useEffect(()=>{if(!activityId&&overview?.activities.length)setActivityId((overview.activities.find(a=>!a.deleted_at&&a.opens_at<=Date.now()&&a.closes_at>Date.now())||overview.activities.find(a=>!a.deleted_at)||overview.activities[0]).id);},[overview,activityId]);
- useEffect(()=>{loadAnalytics().catch((e)=>setError(e.message));},[loadAnalytics]);
- useEffect(()=>{if(tab!=='backups'&&tab!=='dashboard')return;const timer=setInterval(()=>{(tab==='backups'?refresh():loadAnalytics()).catch(()=>{});},10000);return()=>clearInterval(timer);},[tab,refresh,loadAnalytics]);
+ useEffect(()=>{const controller=new AbortController();loadAnalytics(controller.signal).catch((e)=>{if(!controller.signal.aborted)setError(e.message);});return()=>controller.abort();},[loadAnalytics]);
+ useEffect(()=>{
+   if(tab!=='backups'&&tab!=='dashboard')return;
+   let stopped=false,running=false,wakePending=false,failures=0;
+   let timer:ReturnType<typeof setTimeout>|undefined,controller:AbortController|undefined;
+   const available=()=>document.visibilityState==='visible'&&navigator.onLine;
+   const schedule=()=>{
+     clearTimeout(timer);if(stopped||!available())return;
+     const data=pollingData.current;
+     const pending=tab==='backups'?data.overview?.backups.some(b=>['queued','processing'].includes(b.status)):data.analytics?.events.some(e=>['queued','processing'].includes(e.status)||['pending','processing'].includes(e.analysis_status));
+     timer=setTimeout(check,Math.min(60000,(pending?10000:60000)*2**Math.min(failures,3)));
+   };
+   const check=async()=>{
+     clearTimeout(timer);if(stopped||running||!available())return;
+     running=true;const request=new AbortController();controller=request;
+     try{await(tab==='backups'?refresh(request.signal):loadAnalytics(request.signal));failures=0;}
+     catch(e){if(!request.signal.aborted){failures++;setError((e as Error).message);}}
+     finally{running=false;controller=undefined;if(wakePending){wakePending=false;void check();}else schedule();}
+   };
+   const wake=()=>{clearTimeout(timer);if(!available()){controller?.abort();return;}if(running)wakePending=true;else void check();};
+   document.addEventListener('visibilitychange',wake);for(const event of ['focus','online','offline'])window.addEventListener(event,wake);
+   schedule();
+   return()=>{stopped=true;clearTimeout(timer);controller?.abort();document.removeEventListener('visibilitychange',wake);for(const event of ['focus','online','offline'])window.removeEventListener(event,wake);};
+ },[tab,refresh,loadAnalytics]);
  async function action(fn:()=>Promise<void>){setError('');setNotice('');setBusy(true);try{await fn();await refresh();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  const filteredStudents=useMemo(()=>{
    if(!overview)return [];

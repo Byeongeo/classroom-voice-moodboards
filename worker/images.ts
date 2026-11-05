@@ -3,6 +3,7 @@ import type { Activity, Board, Student } from '../shared/contracts';
 import { allowedActivity } from './data';
 import { ApiError, assert, json, now, sql, type Env } from './env';
 import { putObject, recordExistingObject } from './storage';
+import { queuePreview } from './previews';
 
 const MAX_UPLOAD = 4 * 1024 * 1024;
 export async function readUpload(request: Request) {
@@ -59,6 +60,7 @@ async function finishUpload(env: Env, event: UploadEvent, object: R2Object) {
     sql(env, "UPDATE events SET status='succeeded',image_id=?,lease_until=0,error_code=NULL,updated_at=? WHERE id=?",event.id,now(),event.id),
     sql(env, `INSERT OR IGNORE INTO image_actions(id,student_id,activity_id,board_id,image_id,event_id,action,metadata_json,created_at) VALUES(?,?,?,?,?,?,'upload',?,?)`,'uploaded-'+event.id,event.student_id,event.activity_id,event.board_id,event.id,event.id,JSON.stringify({filename:event.transcript.replace('[이미지 업로드] ',''),bytes:object.size,sha256:object.customMetadata?.sha256||null}),now()),
   ]);
+  await queuePreview(env,event.id);
 }
 export async function uploadImage(request: Request, env: Env, student: Student, activityId: string) {
   const requestId = z.string().uuid().parse(request.headers.get('X-Upload-ID'));

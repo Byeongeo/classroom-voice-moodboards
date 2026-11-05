@@ -121,7 +121,7 @@ describe('30명 동시 요청과 영구 저장',()=>{
     for(const s of students){
       const ws=await value(await call('/api/workspace?activityId='+activityId,'GET',undefined,s.cookie));
       expect(ws.events[0].transcript).toBe(utterance);expect(ws.used).toBe(1);expect(ws.images.length).toBe(1);expect(ws.board.active_image_id).toBe(ws.images[0].id);
-      const image=await call(ws.images[0].imageUrl,'GET',undefined,s.cookie);expect(image.status).toBe(200);expect(image.headers.get('Cache-Control')).toBe('private, no-store');expect((await image.arrayBuffer()).byteLength).toBeGreaterThan(30);
+      const image=await call(ws.images[0].imageUrl,'GET',undefined,s.cookie);expect(image.status).toBe(200);expect(image.headers.get('Cache-Control')).toBe('private, no-cache');expect((await image.arrayBuffer()).byteLength).toBeGreaterThan(30);
     }
     latencies.sort((a,b)=>a-b);
     const report = {students:30,accepted:30,persistedLogs:30,persistedImages:30,concurrency:peak,acceptP95Ms:Math.round(latencies[28]),totalMs:Math.round(performance.now()-started),provider:'mock',handler:'Node test runner',storage:'real local D1/R2 in workerd'};

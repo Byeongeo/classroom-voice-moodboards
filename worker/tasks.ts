@@ -2,11 +2,13 @@ import { z } from 'zod';
 import { serve } from './index';
 import { processBackup } from './backup';
 import { recoverJobs, runAnalysis, runGeneration } from './jobs';
+import { runPreview } from './previews';
 import { type Env, json } from './env';
 
 const jobSchema = z.discriminatedUnion('stage', [
   z.object({ stage: z.literal('generation'), eventId: z.string().uuid() }),
   z.object({ stage: z.literal('analysis'), eventId: z.string().uuid() }),
+  z.object({ stage: z.literal('preview'), imageId: z.string().uuid() }),
   z.object({ stage: z.literal('backup'), backupId: z.string().uuid() }),
   z.object({ stage: z.literal('maintenance') }),
 ]);
@@ -20,6 +22,7 @@ export class ClassroomTasks {
     const job = jobSchema.parse(await request.json());
     if (job.stage === 'maintenance') { await recoverJobs({} as ScheduledController, this.env); return json({ status: 'done' }); }
     if (job.stage === 'backup') { await processBackup(this.env, job.backupId); return json({ status: 'done' }); }
+    if (job.stage === 'preview') return json({ status:await runPreview(this.env,job.imageId) });
     const status = job.stage === 'generation' ? await runGeneration(this.env, job.eventId) : await runAnalysis(this.env, job.eventId);
     return json({ status });
   }

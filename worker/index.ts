@@ -1,13 +1,14 @@
 import { z, ZodError } from 'zod';
 import { activitySchema, classSchema, commandSchema, genreSchema, loginSchema, MODELS, rosterSchema, type Activity, type ImageStyle, type Student } from '../shared/contracts';
 import { cookie, digest, getSession, issueSession, passwordHash, rateLimitLogin, requireTeacher, sameSecret } from './auth';
-import { allowedActivity, kstDayStart, quota, studentById, workspace } from './data';
+import { allowedActivity, kstDayStart, quota, studentById, workspace, workspaceStatus } from './data';
 import { ApiError, assert, body, json, now, sql, type Env, type Session } from './env';
 import { processBatch } from './jobs';
 import { storageUsage } from './storage';
 import { backupRoute, createBackup } from './backup';
 import { assignClass, assignActivity, activityAccessSql, activityAssignmentStatements, validateParticipants, participantInserts } from './participants';
 import { imageAction, uploadImage } from './images';
+import { deliverImage, imageReadId } from './imageDelivery';
 
 async function login(request: Request, env: Env) {
   const input = await body(request) as Record<string, unknown>;
@@ -163,7 +164,7 @@ async function admin(request: Request, env: Env, session: Session, url: URL) {
   const reviewMatch = route.match(/^\/api\/admin\/events\/([\w-]+)\/review$/);
   if (reviewMatch && request.method === 'PUT') {
     const { note } = z.object({ note: z.string().trim().min(1).max(2000) }).parse(await body(request));
-    await sql(env, 'INSERT INTO reviews(event_id,note,reviewed_at) VALUES(?,?,?) ON CONFLICT(event_id) DO UPDATE SET note=excluded.note,reviewed_at=excluded.reviewed_at', reviewMatch[1], note, now()).run();
+    await sql(env, 'INSERT INTO reviews(event_id,note,reviewed_at) VALUES(?,?,?) ON CONFLICT(event_id) DO UPDATE SET note=excluded.note,reviewed_at=MAX(excluded.reviewed_at,reviews.reviewed_at+1)', reviewMatch[1], note, now()).run();
     return json({ ok: true });
   }
   if (route === '/api/admin/styles' && request.method === 'POST') {
@@ -198,6 +199,8 @@ async function route(request: Request, env: Env) {
   }
   if (url.pathname === '/api/health') return json({ status: 'ok' });
   if (url.pathname === '/api/login' && request.method === 'POST') return login(request, env);
+  const imageId = imageReadId(request);
+  if (imageId) return deliverImage(request, env, imageId);
   const session = await getSession(request, env);
   if (url.pathname === '/api/me') return json({ role: session.role, student: session.student_id ? await studentById(env, session.student_id) : null, models: MODELS });
   if (url.pathname === '/api/logout' && request.method === 'POST') {
@@ -206,14 +209,6 @@ async function route(request: Request, env: Env) {
     return json({ ok: true }, 200, { 'Set-Cookie': cookie('', request, 0) });
   }
   if (url.pathname.startsWith('/api/admin/')) return admin(request, env, session, url);
-  const imageMatch = url.pathname.match(/^\/api\/images\/([\w-]+)$/);
-  if (imageMatch && request.method === 'GET') {
-    const image = await sql(env, 'SELECT object_key,mime_type,student_id FROM images WHERE id=?', imageMatch[1]).first<{object_key:string;mime_type:string;student_id:string}>();
-    assert(image && (session.role === 'teacher' || image.student_id === session.student_id), 404, 'IMAGE_NOT_FOUND', '이미지를 찾을 수 없습니다.');
-    const object = await env.IMAGES.get(image.object_key);
-    assert(object, 503, 'IMAGE_STORAGE_ERROR', '이미지 저장소를 확인해 주세요.');
-    return new Response(object.body, { headers: { 'Content-Type': image.mime_type } });
-  }
   assert(session.role === 'student' && session.student_id, 403, 'STUDENT_ONLY', '학생 계정으로 이용해 주세요.');
   const student = await studentById(env, session.student_id);
   if (url.pathname === '/api/activities' && request.method === 'GET') {
@@ -248,6 +243,7 @@ async function route(request: Request, env: Env) {
     }
     return json(await workspace(env, student, activity.id));
   }
+  if (url.pathname === '/api/workspace/status' && request.method === 'GET') return json(await workspaceStatus(env, student, z.string().uuid().parse(url.searchParams.get('activityId'))));
   if (url.pathname === '/api/workspace' && request.method === 'GET') return json(await workspace(env, student, z.string().uuid().parse(url.searchParams.get('activityId'))));
   const commandMatch = url.pathname.match(/^\/api\/activities\/([\w-]+)\/commands$/);
   if (commandMatch && request.method === 'POST') {
@@ -296,10 +292,13 @@ export async function serve(request: Request, env: Env) {
     // Routes such as join/pin may not need a body. Release the forwarded stream
     // before responding, including uploads rejected before taking a body slot.
     if (request.body && !request.bodyUsed) await request.body.cancel().catch(() => {});
-    const secured = new Response(response.body, response);
+    if (request.method === 'HEAD') await response.body?.cancel();
+    const secured = new Response(request.method === 'HEAD' ? null : response.body, response);
     secured.headers.set('X-Content-Type-Options', 'nosniff');
     secured.headers.set('Referrer-Policy', 'same-origin');
-    if (new URL(request.url).pathname.startsWith('/api/')) secured.headers.set('Cache-Control', 'private, no-store');
+    if (new URL(request.url).pathname.startsWith('/api/') && !(imageReadId(request) && [200, 304].includes(response.status)))
+      secured.headers.set('Cache-Control', 'private, no-store');
+    if (imageReadId(request)) secured.headers.set('Vary', 'Cookie');
     return secured;
 }
 
@@ -308,6 +307,7 @@ export default {
   async fetch(request: Request, env: Env) {
     // Free Workers have a 10ms CPU budget. SQLite-backed Durable Objects are
     // available on Free and provide 30s for API/hash/image/JSON processing.
+    if (imageReadId(request)) return serve(request, env);
     if (new URL(request.url).pathname.startsWith('/api/')) return env.TASKS.getByName('api').fetch(request);
     return serve(request, env);
   },

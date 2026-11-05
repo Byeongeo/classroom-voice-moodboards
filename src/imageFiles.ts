@@ -33,7 +33,12 @@ export async function allRecords<T>(activityId:string,kind:'records'|'image-acti
   }while(next);
   return rows;
 }
-export async function imageBlob(image:SavedImage){const response=await fetch(image.imageUrl);if(!response.ok)throw new Error('저장된 이미지를 내려받지 못했습니다.');return response.blob();}
+export async function imageBlob(image:SavedImage){
+  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),45000);
+  try{const response=await fetch(image.imageUrl,{credentials:'same-origin',signal:controller.signal});if(!response.ok)throw new Error(response.status===401?'다시 로그인한 뒤 내려받아 주세요.':'저장된 이미지를 내려받지 못했습니다.');return await response.blob();}
+  catch(error){if(controller.signal.aborted)throw new Error('이미지 다운로드가 지연됩니다. 연결을 확인한 뒤 다시 시도해 주세요. 원본은 서버에 보관되어 있습니다.');throw error;}
+  finally{clearTimeout(timer);}
+}
 export async function downloadImage(image:SavedImage){saveFile(await imageBlob(image),`교실-이미지-${image.id}.${image.mime_type.split('/')[1]}`);}
 export async function imageZip(images:SavedImage[],name:string,records?:Record<string,unknown>){
   const {default:JSZip}=await import('jszip');const zip=new JSZip();

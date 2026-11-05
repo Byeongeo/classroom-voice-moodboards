@@ -1,0 +1,23 @@
+.remote-image{display:block;position:relative;width:100%;max-width:100%;isolation:isolate}
+.remote-image img{display:block;max-width:100%}
+.remote-image img[role="button"]{cursor:zoom-in}
+.remote-image img[role="button"]:focus-visible{outline:3px solid #6c956d;outline-offset:3px}
+.remote-image[data-state="loading"],.remote-image[data-state="failed"]{min-height:110px;background:#edf1e9;border-radius:8px}
+.remote-image[data-state="failed"] img{visibility:hidden}
+.remote-image-link{display:block}
+.remote-image-status{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:14px;text-align:center;color:#45614b;background:#edf1e9eb;border-radius:inherit;font-size:12px;line-height:1.65;overflow-wrap:anywhere}
+.remote-image-retry{font:inherit;font-size:11px;padding:7px 11px;background:#fff;white-space:normal}
+.remote-image-spinner{display:block;width:22px;height:22px;border:2px solid #c8d5c2;border-top-color:#517657;border-radius:50%;animation:remote-image-spin 1s linear infinite}
+.active-preview>.remote-image{position:absolute;inset:0;height:100%;border-radius:inherit}
+.active-preview>.remote-image>img,.active-preview>.remote-image>.remote-image-link,.active-preview>.remote-image>.remote-image-link>img{width:100%;height:100%;max-height:none;object-fit:contain}
+.image-tile .remote-image{aspect-ratio:1;margin:0;white-space:normal;overflow:visible}
+.image-tile .remote-image-status{white-space:normal;text-overflow:clip;margin:0;font-size:11px}
+.image-tile .remote-image-status>span{white-space:normal;overflow:visible;margin:0;max-width:100%;font-size:inherit}
+.record-content>.remote-image{flex:0 0 180px;max-width:30%}
+.image-history-row>.remote-image{flex:0 0 90px;width:90px;min-height:90px}
+.image-history-row .remote-image-status{padding:5px;gap:5px;font-size:10px}
+.image-history-row .remote-image-retry{font-size:10px;padding:4px 5px}
+@keyframes remote-image-spin{to{transform:rotate(360deg)}}
+@media(max-width:1050px){.record-content>.remote-image{flex-basis:140px}}
+@media(max-width:720px){.record-content>.remote-image{max-width:180px;flex-basis:auto}}
+@media(prefers-reduced-motion:reduce){.remote-image-spinner{animation:none}}

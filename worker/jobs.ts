@@ -6,6 +6,7 @@ import { analyze } from './analysis';
 import { expireBackups } from './backup';
 import { recoverUploads } from './images';
 import { putObject, recordExistingObject, checkStorageAvailable } from './storage';
+import { queuePreview, recoverPreviews } from './previews';
 
 type StoredEvent = {
   id: string; student_id: string; activity_id: string; board_id: string; transcript: string;
@@ -29,6 +30,7 @@ async function finishImage(env: Env, event: StoredEvent, object: R2Object) {
     sql(env, `INSERT OR IGNORE INTO image_actions(id,student_id,activity_id,board_id,image_id,event_id,action,metadata_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, 'generated-'+event.id,event.student_id,event.activity_id,event.board_id,event.id,event.id,event.action==='EDIT_ACTIVE'?'edit':'generate',JSON.stringify({parentImageId:event.action==='EDIT_ACTIVE'?event.source_image_id:null}),now()),
     ...(pin&&event.source_image_id?[sql(env,`INSERT OR IGNORE INTO image_actions(id,student_id,activity_id,board_id,image_id,event_id,action,metadata_json,created_at) VALUES(?,?,?,?,?,?,'pin',?,?)`,'auto-pin-'+event.id,event.student_id,event.activity_id,event.board_id,event.source_image_id,event.id,JSON.stringify({source:'spoken-command'}),now())]:[]),
   ]);
+  await queuePreview(env,event.id);
 }
 
 export async function runGeneration(env: Env, id: string): Promise<'done' | 'busy'> {
@@ -112,7 +114,7 @@ export async function processBatch(batch: MessageBatch<Job>, env: Env) {
   const process = async (message: Message<Job>) => {
     try {
       const job = message.body;
-      const taskName = job.stage === 'maintenance' ? 'maintenance' : job.stage === 'backup' ? `backup:${job.backupId}` : `event:${job.eventId}`;
+      const taskName = job.stage === 'maintenance' ? 'maintenance' : job.stage === 'backup' ? `backup:${job.backupId}` : job.stage === 'preview' ? `preview:${job.imageId}` : `event:${job.eventId}`;
       const response = await env.TASKS.getByName(taskName).fetch('https://tasks.internal/internal/job', { method: 'POST', body: JSON.stringify(job) });
       if (!response.ok) throw new Error('TASK_FAILED');
       const { status } = await response.json() as {status:string};
@@ -143,4 +145,5 @@ export async function recoverJobs(_controller: ScheduledController, env: Env) {
   await env.DB.batch([sql(env, 'DELETE FROM sessions WHERE expires_at<?', timestamp), sql(env, 'DELETE FROM login_limits WHERE expires_at<?', timestamp)]);
   await expireBackups(env);
   await recoverUploads(env);
+  await recoverPreviews(env);
 }

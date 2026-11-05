@@ -20,7 +20,8 @@ export default function App() {
   async function logout() {
     try { await api('/api/logout', 'POST', {}); setUser(null); } catch(e) { setError((e as Error).message); }
   }
+  const sessionExpired = useCallback(() => { setUser(null); setError('로그인 시간이 만료됐습니다. 다시 로그인해 주세요.'); }, []);
   if (loading) return <div className="loading-screen" role="status">교실을 여는 중…</div>;
   if (!user) return <>{error && <div className="top-error" role="alert">{error}<button onClick={load}>다시 연결</button></div>}<Login onLogin={load}/></>;
-  return <div className="app-shell"><header className="app-header"><a href="/" className="brand"><Palette size={22}/><span>말로 그리는 교실</span></a><div className="header-right"><span className="fine">{user.role === 'teacher' ? '교사 작업실' : `${user.student?.grade}학년 ${user.student?.class_number}반 · ${user.student?.name}`}</span><button onClick={logout}><LogOut size={15}/> 로그아웃</button></div></header>{error && <p className="error" role="alert">{error}</p>}<Suspense fallback={<div className="loading-screen">작업실을 여는 중…</div>}>{user.role === 'teacher' ? <Admin/> : user.student && <StudentStudio student={user.student}/>}</Suspense></div>;
+  return <div className="app-shell"><header className="app-header"><a href="/" className="brand"><Palette size={22}/><span>말로 그리는 교실</span></a><div className="header-right"><span className="fine">{user.role === 'teacher' ? '교사 작업실' : `${user.student?.grade}학년 ${user.student?.class_number}반 · ${user.student?.name}`}</span><button onClick={logout}><LogOut size={15}/> 로그아웃</button></div></header>{error && <p className="error" role="alert">{error}</p>}<Suspense fallback={<div className="loading-screen">작업실을 여는 중…</div>}>{user.role === 'teacher' ? <Admin/> : user.student && <StudentStudio key={user.student.id} student={user.student} onSessionExpired={sessionExpired}/>}</Suspense></div>;
 }

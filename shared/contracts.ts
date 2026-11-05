@@ -104,6 +104,8 @@ export type Activity = { id: string; class_id: string; title: string; unit: stri
 export type SavedImage = {
   id: string; event_id: string; board_id: string; prompt: string; mime_type: string;
   parent_image_id: string | null; on_board: number; hidden_at: number | null; origin: 'generated' | 'upload'; byte_size:number; created_at: number; imageUrl: string;
+  preview_object_key?: string | null; preview_mime_type?: string | null; preview_byte_size?: number | null;
+  preview_status?: 'pending'|'queued'|'processing'|'ready'|'skipped'|'failed'; preview_updated_at?: number; previewUrl?: string;
 };
 export type EventRecord = {
   id: string; student_id: string; board_id: string; activity_id: string; transcript: string; input_method: 'speech' | 'text';
@@ -114,7 +116,8 @@ export type EventRecord = {
 };
 export type ImageAction = { id: string; image_id: string; event_id: string | null; action: 'upload'|'generate'|'edit'|'hide'|'pin'|'activate'|'discard'; metadata_json: string; created_at: number; student_id: string; board_id: string; activity_id: string };
 export const IMAGE_ACTION_NAMES: Record<ImageAction['action'], string> = {upload:'이미지 업로드',generate:'이미지 생성',edit:'이미지 수정',hide:'화면에서 제거',pin:'보드에 보관',activate:'작업 이미지로 불러오기',discard:'발화로 이미지 닫기'};
-export type Workspace = {
+export type WorkspaceStatus = { revision: string; hasPending: boolean; serverTime: number };
+export type Workspace = WorkspaceStatus & {
   student: Student; used: number; limit: number; activity: Activity; board: Board;
   images: SavedImage[]; events: EventRecord[]; pending: EventRecord | null;
 };

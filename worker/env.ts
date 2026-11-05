@@ -9,7 +9,7 @@ export interface Env {
   MAX_CLASS_COMMANDS_PER_DAY?: string;
   MAX_STORAGE_BYTES?: string;
 }
-export type Job = { eventId: string; stage: 'generation' | 'analysis' } | { backupId: string; stage: 'backup' } | { stage: 'maintenance' };
+export type Job = { eventId: string; stage: 'generation' | 'analysis' } | { imageId: string; stage: 'preview' } | { backupId: string; stage: 'backup' } | { stage: 'maintenance' };
 export type Session = { role: 'student' | 'teacher'; student_id: string | null };
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }

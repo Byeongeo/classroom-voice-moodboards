@@ -20,7 +20,7 @@ const delay=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 
 it('실제 workerd·SQLite Durable Objects·Queues·D1·R2에서 30명 생성/분석/업로드/수정/삭제 이력을 보존한다',async()=>{
   mkdirSync('output',{recursive:true});
-  const bundle=await build({entryPoints:['worker/index.ts'],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',external:['node:buffer'],logLevel:'silent'});
+  const bundle=await build({entryPoints:['worker/index.ts'],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',external:['node:*'],logLevel:'silent'});
   const image=fixtureImage();const checksum=createHash('sha256').update(image).digest('hex');
   let active=0,peak=0,imageCalls=0,analysisCalls=0;
   const options=convertV4MiniflareOptions({
@@ -82,12 +82,30 @@ it('실제 workerd·SQLite Durable Objects·Queues·D1·R2에서 30명 생성/�
     await waitFor("SELECT COUNT(*) n FROM events WHERE status='succeeded' AND analysis_status='completed'",30);
     const firstPhaseMs=performance.now()-start;
     expect((await db.prepare('SELECT COUNT(*) n FROM images').first<any>()).n).toBe(30);
-    for(const s of students){
-      const workspace=await value(await request('/api/workspace?activityId='+a.id,'GET',undefined,s.cookie));
+    await waitFor("SELECT COUNT(*) n FROM images WHERE preview_status IN ('ready','skipped','failed')",30);
+    const workspaces=await Promise.all(students.map(s=>request('/api/workspace?activityId='+a.id,'GET',undefined,s.cookie).then(value)));
+    const downloadTimes:number[]=[];
+    const originalEtags=await Promise.all(students.map(async(s,i)=>{
+      const started=performance.now();const workspace=workspaces[i];
       const saved=await request(workspace.images[0].imageUrl,'GET',undefined,s.cookie);
       expect(createHash('sha256').update(new Uint8Array(await saved.arrayBuffer())).digest('hex')).toBe(checksum);
+      downloadTimes.push(performance.now()-started);
       const analysis=JSON.parse(workspace.events[0].analysis_json);expect(analysis.language.engine).toBe('openrouter-ko-evidence');expect(analysis.morphology).toBeUndefined();
-    }
+      return saved.headers.get('ETag')!;
+    }));
+    const previousCookies=students.map(s=>s.cookie);
+    await Promise.all(students.map(async(s)=>{await value(await request('/api/logout','POST',{},s.cookie));const expired=await request(workspaces[0].images[0].imageUrl,'GET',undefined,s.cookie);expect(expired.status).toBe(401);await expired.arrayBuffer();}));
+    await Promise.all(students.map(async(s)=>{const response=await request('/api/login','POST',s);await value(response);s.cookie=cookieOf(response);}));
+    expect(students.every((s,i)=>s.cookie!==previousCookies[i])).toBe(true);
+    const reopened=await Promise.all(students.map(async(s,i)=>{
+      const workspace=await value(await request('/api/workspace?activityId='+a.id,'GET',undefined,s.cookie));
+      const url=workspace.images[0].previewUrl;expect(url).toContain('preview=1');
+      const saved=await request(url,'GET',undefined,s.cookie);expect(saved.status).toBe(200);
+      const bytes=new Uint8Array(await saved.arrayBuffer());expect(bytes.byteLength).toBeLessThanOrEqual(96*1024);expect(bytes.byteLength).toBeGreaterThan(0);
+      const cached=await endpoint.fetch(origin+workspace.images[0].imageUrl,{headers:{Cookie:s.cookie,'If-None-Match':originalEtags[i]}});
+      expect(cached.status).toBe(304);expect((await cached.arrayBuffer()).byteLength).toBe(0);
+      return bytes.byteLength;
+    }));
     const uploaded=await Promise.all(students.map(async(s)=>{
       const uploadId=crypto.randomUUID();
       for(let attempt=0;attempt<60;attempt++){
@@ -112,11 +130,18 @@ it('실제 workerd·SQLite Durable Objects·Queues·D1·R2에서 30명 생성/�
     expect((await db.prepare("SELECT COUNT(*) n FROM images WHERE hidden_at IS NOT NULL").first<any>()).n).toBe(31);
     expect((await db.prepare('SELECT COUNT(*) n FROM image_actions').first<any>()).n).toBe(93);
     for(const row of (await db.prepare('SELECT object_key FROM images').all<any>()).results){const saved=await bucket.get(row.object_key);expect(saved).not.toBeNull();expect(createHash('sha256').update(new Uint8Array(await saved!.arrayBuffer())).digest('hex')).toBe(checksum);}
-    const counted=await db.prepare('SELECT byte_size,object_count FROM storage_totals WHERE id=1').first<any>();expect(counted.byte_size).toBe(61*image.byteLength);expect(counted.object_count).toBe(61);
+    await waitFor("SELECT COUNT(*) n FROM images WHERE preview_status IN ('ready','skipped','failed')",61);
+    const inventory=await bucket.list({limit:1000});expect(inventory.truncated).toBe(false);
+    const originalBytes=inventory.objects.filter(o=>!o.key.startsWith('previews/')).reduce((n,o)=>n+o.size,0);
+    const previewObjects=inventory.objects.filter(o=>o.key.startsWith('previews/'));
+    const previewBytes=previewObjects.reduce((n,o)=>n+o.size,0);
+    expect(originalBytes).toBe(61*image.byteLength);expect(previewObjects).toHaveLength(61);
+    const counted=await db.prepare('SELECT byte_size,object_count FROM storage_totals WHERE id=1').first<any>();expect(counted.byte_size).toBe(originalBytes+previewBytes);expect(counted.object_count).toBe(inventory.objects.length);
     expect(peak).toBeGreaterThan(1);expect(peak).toBeLessThanOrEqual(6);
     const foreign=await request('/api/images/'+firstId,'GET',undefined,students[1].cookie);expect(foreign.status).toBe(404);await foreign.arrayBuffer();
     latencies.sort((x,y)=>x-y);
-    const report={checkedAt:new Date().toISOString(),students:30,loginMs:Math.round(loginMs),accepted:30,acceptP95Ms:Math.round(latencies[28]),generationAndAnalysisMs:Math.round(firstPhaseMs),generatedAndEdited:31,uploads:30,persistedLogs:61,persistedImages:61,imageActions:93,hiddenImagesStillStored:31,imageBytesEach:image.byteLength,verifiedTotalImageBytes:counted.byte_size,imageCalls,analysisCalls,observedLocalProviderConcurrency:peak,provider:'synthetic mock, no external requests',runtime:'all API and job handlers in actual workerd + SQLite Durable Objects + local Queues + D1/R2',limits:'Does not emulate production account quotas or prove remote Free CPU compliance'};
+    downloadTimes.sort((x,y)=>x-y);
+    const report={checkedAt:new Date().toISOString(),students:30,loginMs:Math.round(loginMs),accepted:30,acceptP95Ms:Math.round(latencies[28]),generationAndAnalysisMs:Math.round(firstPhaseMs),generatedAndEdited:31,uploads:30,persistedLogs:61,persistedImages:61,imageActions:93,hiddenImagesStillStored:31,imageBytesEach:image.byteLength,verifiedOriginalBytes:originalBytes,verifiedPreviewBytes:previewBytes,verifiedTotalStorageBytes:counted.byte_size,concurrentOriginalDownloads:30,originalDownloadP95Ms:Math.round(downloadTimes[28]),logoutRelogin:30,concurrentPreviewReopens:reopened.length,conditional304:30,imageCalls,analysisCalls,observedLocalProviderConcurrency:peak,provider:'synthetic mock, no external requests',runtime:'all API and job handlers in actual workerd + SQLite Durable Objects + local Queues + D1/R2',limits:'Does not emulate production account quotas or prove remote Free CPU compliance'};
     writeFileSync('output/workerd-load-results.json',JSON.stringify(report,null,2));
   }finally{await mf.dispose();}
 },180000);
