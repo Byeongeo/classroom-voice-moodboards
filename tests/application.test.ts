@@ -261,7 +261,7 @@ describe('확장된 배정·비밀번호·이미지 전체 이력',()=>{
     expect((await command(students[0],utterance,crypto.randomUUID(),a.id)).status).toBe(404);
     expect((await call('/api/workspace?activityId='+a.id,'GET',undefined,others[0].cookie)).status).toBe(404);
     const list=await value(await call('/api/activities','GET',undefined,students[0].cookie));expect(list.activities.some((x:any)=>x.id===a.id)).toBe(false);
-    const analytics=await value(await teacher('/api/admin/analytics?activityId='+a.id));expect(analytics.events.some((e:any)=>e.id===accepted.eventId)).toBe(true);expect(analytics.students.find((s:any)=>s.id===students[0].id).assigned).toBe(0);
+    const analytics=await value(await teacher('/api/admin/analytics?activityId='+a.id));const records=await value(await teacher('/api/admin/activities/'+a.id+'/records'));expect(records.rows.some((e:any)=>e.id===accepted.eventId)).toBe(true);expect(analytics.students.find((s:any)=>s.id===students[0].id).assigned).toBe(0);
     expect((await teacher('/api/admin/classes/'+c.id+'/assignments','PUT',{rooms:[],students:[{studentId:crypto.randomUUID(),access:true}]})).status).toBe(400);
   });
   it('30명 전원의 비밀번호를 자동 발급하고 비밀번호만으로 미배정 활동에 들어가지 못하게 한다',async()=>{
@@ -297,7 +297,7 @@ describe('확장된 배정·비밀번호·이미지 전체 이력',()=>{
     expect((await call('/api/images/'+edited.id,'GET',undefined,s.cookie)).status).toBe(200);
     expect((await call('/api/activities/'+a.id+'/image-actions','GET',undefined,students[6].cookie)).status).toBe(200); // own history only
     expect((await value(await call('/api/activities/'+a.id+'/image-actions','GET',undefined,students[6].cookie))).rows).toEqual([]);
-    expect((await value(await teacher('/api/admin/analytics?activityId='+a.id))).imageActions).toHaveLength(7);
+    expect((await value(await teacher('/api/admin/activities/'+a.id+'/image-actions'))).rows).toHaveLength(7);
     const more=Array.from({length:205},()=>env.DB.prepare("INSERT INTO image_actions(id,student_id,activity_id,board_id,image_id,action,created_at)VALUES(?,?,?,?,?,'activate',?)").bind(crypto.randomUUID(),s.id,a.id,edited.board_id,imageId,Date.now()));await env.DB.batch(more);
     let next:any=null;const all:string[]=[];do{const query=next?'?'+new URLSearchParams({afterTime:String(next.afterTime),afterId:next.afterId}):'';const page=await value(await call('/api/activities/'+a.id+'/image-actions'+query,'GET',undefined,s.cookie));all.push(...page.rows.map((r:any)=>r.id));next=page.next;}while(next);expect(all).toHaveLength(212);expect(new Set(all).size).toBe(212);
     const badRequest=(mime:string,body:BodyInit)=>worker.fetch(new Request(origin+'/api/activities/'+a.id+'/uploads',{method:'POST',headers:{Cookie:s.cookie,Origin:origin,'Content-Type':mime,'X-Upload-ID':crypto.randomUUID()},body}),apiEnv);
@@ -371,7 +371,7 @@ describe('활동별 독립 참여 대상',()=>{
     const bytes=Uint8Array.from(Buffer.from(png,'base64'));
     const upload=await worker.fetch(new Request(origin+'/api/activities/'+a.id+'/uploads',{method:'POST',headers:{Origin:origin,Cookie:members[0].cookie,'Content-Type':'image/png','X-Upload-ID':crypto.randomUUID()},body:bytes}),apiEnv);expect(upload.status).toBe(404);
     expect((await call('/api/images/'+image.id+'/activate','POST',{},members[0].cookie)).status).toBe(404);
-    const analytics=await value(await teacher('/api/admin/analytics?activityId='+a.id));expect(analytics.events.some((item:any)=>item.id===event.eventId)).toBe(true);expect(analytics.students.find((s:any)=>s.id===members[0].id).assigned).toBe(0);
+    const analytics=await value(await teacher('/api/admin/analytics?activityId='+a.id));const records=await value(await teacher('/api/admin/activities/'+a.id+'/records'));expect(records.rows.some((item:any)=>item.id===event.eventId)).toBe(true);expect(analytics.students.find((s:any)=>s.id===members[0].id).assigned).toBe(0);
     expect((await call('/api/images/'+image.id,'GET',undefined,members[0].cookie)).status).toBe(200);expect(await visible(members[2].cookie)).toContain(b.id);
     await teacher('/api/admin/activities/'+a.id+'/assignments','PUT',{mode:'class',rooms:[],students:[]});
     await teacher('/api/admin/classes/'+group.id+'/assignments','PUT',{rooms:[{grade:9,classNumber:1}],students:[]});

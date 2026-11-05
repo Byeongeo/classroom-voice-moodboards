@@ -141,3 +141,22 @@ export type LanguageFeatures = {
 };
 // Optional morphology keeps previously stored Stanza observations readable.
 export type Analysis = { language?: LanguageFeatures; morphology?: Morphology; semantic: SemanticAnalysis; score: number | null; rubric: Rubric; version: string; model: string };
+export type BeforeCursor = { beforeTime: number; beforeId: string };
+export type RecentPage<T> = { rows: T[]; next: BeforeCursor | null };
+export type RecordPage<T> = RecentPage<T>;
+export type RecentRecord = Pick<EventRecord, 'id'|'student_id'|'activity_id'|'kind'|'created_at'|'transcript'|'input_method'|'status'|'image_id'>;
+export type AnalyticsStudentSummary = Pick<Student, 'id'|'grade'|'class_number'|'student_number'|'name'|'enabled'> & {
+  effective_limit: number; used: number; assigned: number; imageCount: number; scoreAverage: number | null; scoredCount: number; needsReviewCount: number;
+};
+export type AnalyticsStats = {
+  recordCount: number; eventsCount: number; participantCount: number; imageCount: number; imageActionCount: number;
+  analysisCount: number; comparableCount: number; scoredCount: number; previousCount: number; average: number | null; reviewCount: number;
+};
+export type CriterionSummary = { sum: number; sampleCount: number; average: number | null; evidenceCount: number };
+export type AnalyticsSummary = {
+  activity: Activity; students: AnalyticsStudentSummary[]; stats: AnalyticsStats; criteria: Record<string, CriterionSummary>;
+  keywords: {word:string;count:number}[]; trend: {id:string;studentId:string;createdAt:number;score:number;label:string}[];
+  hasPending: boolean; revision: string; serverTime: number;
+};
+export type ScoreEvidence = { id:string; studentId:string; studentName:string; transcript:string; createdAt:number; score:number; reason?:string; evidence:{quote:string;explanation:string}[] };
+export type ScoreEvidencePage = RecentPage<ScoreEvidence> & { total:number; sum:number; average:number|null };

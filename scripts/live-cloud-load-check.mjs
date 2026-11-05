@@ -21,6 +21,15 @@ async function api(path, method = 'GET', data, cookie = '') {
   assert(response.ok, `${path}: ${response.status} ${value.code || 'HTTP_ERROR'}`);
   return { value, cookie: response.headers.get('Set-Cookie')?.split(';')[0] };
 }
+async function teacherPages(activityId,kind,cookie){
+  const rows=[];let next=null;
+  do{
+    const query=new URLSearchParams({limit:'100',...(next?{beforeTime:String(next.beforeTime),beforeId:next.beforeId}:{})});
+    const page=(await api(`/api/admin/activities/${activityId}/${kind}?${query}`,'GET',undefined,cookie)).value;
+    rows.push(...page.rows);next=page.next;
+  }while(next);
+  return rows;
+}
 function fixtureImage() {
   function crc32(bytes) { let crc = 0xffffffff; for (const byte of bytes) { crc ^= byte; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); } return (crc ^ 0xffffffff) >>> 0; }
   function chunk(type, bytes) { const tag = Buffer.from(type), size = Buffer.alloc(4), crc = Buffer.alloc(4); size.writeUInt32BE(bytes.length); crc.writeUInt32BE(crc32(Buffer.concat([tag, bytes]))); return Buffer.concat([size, tag, bytes, crc]); }
@@ -56,8 +65,7 @@ try {
   async function waitForEvents(ids, timeoutMs = 900000) {
     const until = Date.now() + timeoutMs; let last = '', nextLog = 0;
     while (Date.now() < until) {
-      const analytics = (await api('/api/admin/analytics?activityId=' + activity.id, 'GET', undefined, teacher)).value;
-      const rows = analytics.events.filter(e => ids.includes(e.id));
+      const rows = (await teacherPages(activity.id,'records',teacher)).filter(e => ids.includes(e.id));
       const completed = rows.filter(e => e.status === 'succeeded' && e.analysis_status === 'completed').length;
       const failed = rows.filter(e => ['failed', 'ignored', 'discarded'].includes(e.status) || e.analysis_status === 'failed');
       const processing = rows.filter(e => e.status === 'processing').length;
@@ -66,7 +74,7 @@ try {
       if (state !== last || Date.now() >= nextLog) { progress({ phase: 'jobs', completed, total: ids.length, processing, failed: failed.map(e => ({ id: e.id, status: e.status, code: e.error_code, analysis: e.analysis_status })), elapsedMs: Date.now() - started }); last = state; nextLog = Date.now() + 20000; }
       if (failed.length) await writeFile('output/live-cloud-job-failures.json', JSON.stringify(failed, null, 2));
       assert.equal(failed.length, 0, 'Generation or analysis failed; inspect private output/live-cloud-job-failures.json.');
-      if (completed === ids.length) return analytics;
+      if (completed === ids.length) return rows;
       await delay(5000);
     }
     throw new Error('Production queue did not finish in the allotted time.');
@@ -119,10 +127,12 @@ try {
     const response = await fetch(origin + '/api/images/' + file.imageId, { headers: { Cookie: students[file.studentIndex].cookie } }); assert(response.ok);
     assert.equal(hash(Buffer.from(await response.arrayBuffer())), file.sha256);
   }
-  const analytics = (await api('/api/admin/analytics?activityId=' + activity.id, 'GET', undefined, teacher)).value;
-  assert.equal(analytics.events.length, 61); assert.equal(analytics.imageActions.length, 93);
+  const [records,actions]=await Promise.all([teacherPages(activity.id,'records',teacher),teacherPages(activity.id,'image-actions',teacher)]);
+  assert.equal(records.length, 61); assert.equal(actions.length, 93);
   const usage = (await api('/api/admin/overview', 'GET', undefined, teacher)).value.storage;
-  assert.equal(usage.bytes - overview.storage.bytes, files.reduce((sum, f) => sum + f.bytes, 0));
+  // The storage ledger also includes asynchronous display previews. Original
+  // integrity is checked per file above; it is not the entire bucket delta.
+  assert(usage.bytes >= files.reduce((sum, f) => sum + f.bytes, 0));
   report.persistedLogs = 61; report.persistedImages = files.length; report.imageActions = 93; report.hiddenOriginalsVerified = 31; report.verifiedImageBytes = files.reduce((sum, f) => sum + f.bytes, 0); report.files = files;
   report.accessIsolation = true; report.duplicateRequestPrevented = true;
   const backup = (await api('/api/admin/backups', 'POST', {}, teacher)).value;

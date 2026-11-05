@@ -8,6 +8,8 @@ import { storageUsage } from './storage';
 import { backupRoute, createBackup } from './backup';
 import { assignClass, assignActivity, activityAccessSql, activityAssignmentStatements, validateParticipants, participantInserts } from './participants';
 import { imageAction, uploadImage } from './images';
+import { analyticsActivity, analyticsSummary, scoreEvidencePage } from './analytics';
+import { adminRecentPage, studentRecentPage } from './pagination';
 import { deliverImage, imageReadId } from './imageDelivery';
 
 async function login(request: Request, env: Env) {
@@ -136,19 +138,12 @@ async function admin(request: Request, env: Env, session: Session, url: URL) {
   }
   if (route === '/api/admin/analytics' && request.method === 'GET') {
     const id = z.string().uuid().parse(url.searchParams.get('activityId'));
-    const activity = await sql(env, 'SELECT a.*,c.grade,c.class_number FROM activities a JOIN classes c ON c.id=a.class_id WHERE a.id=?', id).first<Activity & {grade:number;class_number:number}>();
-    assert(activity, 404, 'ACTIVITY_NOT_FOUND', '활동을 찾을 수 없습니다.');
-    const [students, events, imageActions] = await Promise.all([
-      sql(env, `SELECT s.id,s.grade,s.class_number,s.student_number,s.name, COALESCE(m.command_limit_override,?) effective_limit,
-        (SELECT COUNT(*) FROM events e WHERE e.student_id=s.id AND e.activity_id=? AND e.kind='command' AND e.created_at>=COALESCE(m.quota_reset_at,0)) used,
-        CASE WHEN ${activityAccessSql()} AND s.enabled=1 THEN 1 ELSE 0 END assigned
-        FROM students s JOIN activities a ON a.id=? JOIN classes c ON c.id=a.class_id LEFT JOIN activity_students m ON m.student_id=s.id AND m.activity_id=a.id
-        WHERE (${activityAccessSql()} AND s.enabled=1) OR EXISTS(SELECT 1 FROM events past WHERE past.student_id=s.id AND past.activity_id=?)
-        ORDER BY s.grade,s.class_number,s.student_number`, activity.command_limit, id, id, id).all(),
-      sql(env, `SELECT e.*,r.note review_note FROM events e LEFT JOIN reviews r ON r.event_id=e.id WHERE e.activity_id=? ORDER BY e.created_at LIMIT 10000`, id).all(),
-      sql(env,'SELECT * FROM image_actions WHERE activity_id=? ORDER BY created_at,id LIMIT 10000',id).all(),
-    ]);
-    return json({ activity, students: students.results, events: events.results, imageActions:imageActions.results });
+    return json(await analyticsSummary(env,await analyticsActivity(env,id),url));
+  }
+  const detailMatch=route.match(/^\/api\/admin\/activities\/([\w-]+)\/(records|image-actions|score-evidence)$/);
+  if(detailMatch&&request.method==='GET'){
+    const activity=await analyticsActivity(env,z.string().uuid().parse(detailMatch[1]));
+    return json(detailMatch[2]==='score-evidence'?await scoreEvidencePage(env,activity,url):await adminRecentPage(env,activity.id,detailMatch[2] as 'records'|'image-actions',url));
   }
   if(route==='/api/admin/genres'&&request.method==='POST'){
     const v=genreSchema.parse(await body(request));const id=crypto.randomUUID();
@@ -223,6 +218,7 @@ async function route(request: Request, env: Env) {
   const recordsMatch=url.pathname.match(/^\/api\/activities\/([\w-]+)\/(records|image-actions)$/);
   if(recordsMatch&&request.method==='GET'){
     await allowedActivity(env,student,recordsMatch[1]);
+    if(url.searchParams.get('view')==='recent')return json(await studentRecentPage(env,student.id,recordsMatch[1],recordsMatch[2] as 'records'|'image-actions',url));
     const afterTime=z.coerce.number().int().nonnegative().parse(url.searchParams.get('afterTime')||0);
     const afterId=z.string().max(100).parse(url.searchParams.get('afterId')||'');
     const table=recordsMatch[2]==='records'?'events':'image_actions';
