@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "classroom-browser-install",
+  "main": "installer/index.ts",
+  "compatibility_date": "2026-10-24",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./output/browser-installer/site",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "durable_objects": { "bindings": [{ "name": "INSTALLER", "class_name": "ClassroomInstaller" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ClassroomInstaller"] }],
+  "observability": { "enabled": false }
+}

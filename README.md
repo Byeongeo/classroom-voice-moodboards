@@ -89,6 +89,10 @@ http://127.0.0.1:8787 에 접속합니다. DB·R2·큐·Durable Objects는 로�
 
 ## Cloudflare Free 배포
 
+[선생님 배포 안내](https://classroom-voice-moodboards.spiffy-jute-ffc.workers.dev/training-guide)에서 두 방법을 선택할 수 있습니다. [브라우저 설치](https://classroom-browser-install.spiffy-jute-ffc.workers.dev/)는 GitHub 계정 없이 본인의 Cloudflare 계정에 새 앱을 설치합니다. 본인 계정으로 로그인한 뒤 R2 활성화, 임시 설치 토큰 발급, OpenRouter 키와 교사 비밀번호 입력을 마치면 앱과 새 저장소가 생성됩니다.
+
+설치기 운영자는 `node scripts/build-installer.mjs`로 현재 소스의 배포본을 묶고 `pnpm exec wrangler deploy --config wrangler.installer.jsonc`로 설치기를 갱신합니다. 설치기가 배포하는 묶음에는 앱 소스에서 빌드한 파일과 D1 구조만 들어갑니다.
+
 대시보드에서 R2를 활성화합니다. Workers Paid로 업그레이드할 필요는 없습니다. 신규 배포는 빈 DB를 사용하며 localhost 학생 자료를 자동 업로드하지 않습니다.
 
 ```powershell

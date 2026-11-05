@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>말로 그리는 교실 · 브라우저 설치</title>
+  <link rel="stylesheet" href="/install.css">
+  <script src="/install.js" type="module"></script>
+</head>
+<body>
+<header>
+  <div class="wrap masthead">
+    <span>말로 그리는 교실</span>
+    <a href="https://classroom-voice-moodboards.spiffy-jute-ffc.workers.dev/training-guide">선생님 배포 안내</a>
+  </div>
+</header>
+<main class="wrap">
+  <p class="kicker">교사 연수 · 브라우저 설치</p>
+  <h1>내 Cloudflare에<br>교실 앱 설치하기</h1>
+  <p class="lead">Chrome에서 가입과 설치를 마칠 수 있습니다. GitHub 계정이나 별도 프로그램 없이 내 수업용 주소를 만듭니다.</p>
+  <noscript><p class="error">설치하려면 브라우저에서 JavaScript를 허용한 뒤 이 페이지를 다시 열어 주세요.</p></noscript>
+
+  <section class="card" aria-labelledby="start-title">
+    <span class="kicker">01 · 시작</span>
+    <h2 id="start-title">Cloudflare 계정이 있나요?</h2>
+    <div class="actions">
+      <a class="button primary" href="#existing" id="choose-existing">계정이 있어요</a>
+      <a class="button" href="#new" id="choose-new">계정이 없어요</a>
+    </div>
+    <div id="existing" hidden>
+      <h3>이미 쓰는 계정으로 로그인해요</h3>
+      <p>Cloudflare에 로그인하고, 여러 계정이 보이면 수업용 앱을 둘 계정을 확인하세요. 이 설치 탭을 열어 둔 채 다음 단계로 내려오세요.</p>
+      <a class="button" href="https://dash.cloudflare.com/login" target="_blank" rel="noopener noreferrer">Cloudflare 로그인 열기 ↗</a>
+    </div>
+    <div id="new" hidden>
+      <h3>가입하고 이메일을 확인해요</h3>
+      <ol>
+        <li><strong>Cloudflare 가입 열기</strong>를 누릅니다. 새 탭에서 이메일과 비밀번호를 입력하고 <strong>Sign up</strong> 또는 <strong>Create account</strong>를 누릅니다. 화면에서 보안 확인을 요청하면 마칩니다.</li>
+        <li>이메일 받은편지함에서 Cloudflare가 보낸 인증 메일을 열고 <strong>Verify email</strong> 또는 <strong>Verify your email address</strong>를 누릅니다. 메일이 안 보이면 스팸함도 확인하세요.</li>
+        <li><strong>대시보드 열기</strong>를 누르고 방금 만든 이메일로 로그인합니다. <strong>Add a domain</strong> 화면이 나오면 <strong>Account home</strong>으로 이동하세요. 이 앱에는 구입한 도메인이 필요 없습니다.</li>
+        <li>대시보드에서 본인 계정이 보이면 이 설치 탭으로 돌아와 <strong>02 준비</strong>부터 진행하세요.</li>
+      </ol>
+      <div class="actions">
+        <a class="button primary" href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener noreferrer">Cloudflare 가입 열기 ↗</a>
+        <a class="button" href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer">대시보드 열기 ↗</a>
+        <a href="https://developers.cloudflare.com/fundamentals/user-profiles/verify-email-address/" target="_blank" rel="noopener noreferrer">이메일 인증 도움말 ↗</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="prepare" aria-labelledby="prepare-title" hidden>
+    <span class="kicker">02 · 준비</span>
+    <h2 id="prepare-title">이미지 저장소와 OpenRouter 키를 준비해요</h2>
+    <h3>R2 이미지 저장소</h3>
+    <p><strong>R2 열기</strong>를 누르고 앱을 설치할 계정을 선택하세요. <strong>Create bucket</strong>이 보이면 준비된 상태입니다. 처음이라면 <strong>Add R2 subscription</strong>을 눌러 요금과 결제수단 화면을 직접 확인하고 활성화합니다. 버킷은 설치기가 만듭니다.</p>
+    <a class="button" id="r2-link" href="https://dash.cloudflare.com/?to=/:account/r2/overview" target="_blank" rel="noopener noreferrer">R2 열기 ↗</a>
+    <h3>OpenRouter 키</h3>
+    <p><strong>OpenRouter 키 발급</strong>을 열어 로그인하고, <strong>Create Key</strong>를 눌러 키를 만드세요. 이름은 <strong>교실 앱</strong>처럼 알아보기 쉽게 적고, 키를 복사해 03의 입력란에 붙여 넣으세요.</p>
+    <a class="button" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">OpenRouter 키 발급 ↗</a>
+    <p class="notice">Workers Free로 설치합니다. R2 활성화 시 결제수단이 필요할 수 있으며 무료 제공량을 넘기면 요금이 발생합니다. OpenRouter 이미지 생성과 문장 분석 비용은 별도입니다.</p>
+  </section>
+
+  <section class="card" id="deploy" aria-labelledby="deploy-title" hidden>
+    <span class="kicker">03 · 설치</span>
+    <h2 id="deploy-title">설치 권한을 확인하고 앱을 만들어요</h2>
+    <h3>1. 임시 설치 토큰 발급</h3>
+    <p><strong>토큰 발급 양식 열기</strong>를 누릅니다. 설치에 필요한 항목을 미리 선택해 둔 Cloudflare 화면이 열립니다.</p>
+    <ol>
+      <li><strong>Permissions</strong>에서 <strong>Account Settings</strong> 읽기와 <strong>Workers Scripts · Workers R2 Storage · D1 · Queues</strong> 편집 권한이 보이는지 확인하세요.</li>
+      <li><strong>Account Resources</strong>는 <strong>Include → Specific account</strong>로 바꾸고 앱을 설치할 계정 하나를 선택하세요. <strong>TTL</strong>에서 가능하면 오늘 또는 연수 종료 시간까지로 만료를 정하세요.</li>
+      <li><strong>Continue to summary → Create Token</strong>을 누릅니다. 한 번 표시되는 토큰을 <strong>Copy</strong>하고 이 페이지의 <strong>Cloudflare 설치 토큰</strong> 칸에 붙여 넣으세요.</li>
+    </ol>
+    <a class="button" id="token-link" target="_blank" rel="noopener noreferrer">토큰 발급 양식 열기 ↗</a>
+    <p class="muted">이번에 만든 설치 토큰을 사용하세요. Cloudflare 로그인 비밀번호나 Global API Key는 입력하지 않습니다. 설치 토큰은 저장하지 않습니다.</p>
+    <form id="install-form" method="post" autocomplete="off">
+      <fieldset id="fields">
+        <legend>2. 설치에 필요한 값 입력</legend>
+        <label for="token">Cloudflare 설치 토큰</label>
+        <input id="token" type="password" autocomplete="off" spellcheck="false" maxlength="160" required>
+        <button class="button" type="button" id="check-account">설치할 계정 확인</button>
+        <p id="account-status" class="muted" role="status"></p>
+        <fieldset id="account-fields" hidden disabled aria-label="계정과 앱 정보">
+          <label for="account">앱을 설치할 Cloudflare 계정</label>
+          <select id="account" required></select>
+          <label for="openrouter">OpenRouter API 키</label>
+          <input id="openrouter" type="password" autocomplete="off" spellcheck="false" maxlength="160" placeholder="sk-or-v1-…" required>
+          <label for="teacher">새 교실 앱의 교사 비밀번호</label>
+          <div class="actions password">
+            <input id="teacher" type="password" autocomplete="new-password" minlength="4" maxlength="128" required>
+            <button class="button" type="button" id="show-password" aria-pressed="false">보기</button>
+            <button class="button" type="button" id="generate-password">자동 생성</button>
+          </div>
+          <p class="muted">4~128자로 정하고 따로 기억해 두세요. 이 비밀번호는 설치 후 교사 로그인에 씁니다.</p>
+          <p class="notice">선택한 계정에 새 앱과 저장소를 만듭니다. 계정의 첫 Workers 앱이면 무료 <code>workers.dev</code> 주소도 등록합니다. OpenRouter 키와 교사 비밀번호는 내 앱의 Cloudflare Secrets에 등록됩니다.</p>
+          <button class="button primary" id="submit-install" type="submit">이 계정에 설치 시작</button>
+        </fieldset>
+      </fieldset>
+    </form>
+    <div id="install-status" aria-live="polite" aria-atomic="true"></div>
+    <progress id="progress" max="4" value="0" aria-label="앱 설치 진행" hidden></progress>
+  </section>
+
+  <section class="card success" id="result" aria-labelledby="result-title" hidden>
+    <span class="kicker">04 · 첫 접속</span>
+    <h2 id="result-title" tabindex="-1">내 교실 앱이 만들어졌어요</h2>
+    <p id="result-status"></p>
+    <label for="student-url">학생에게 나눠 줄 주소</label>
+    <input id="student-url" type="url" readonly>
+    <div class="actions">
+      <a class="button primary" id="teacher-link" target="_blank" rel="noopener noreferrer">내 교사 화면 열기 ↗</a>
+      <a class="button" id="student-link" target="_blank" rel="noopener noreferrer">학생 화면 열기 ↗</a>
+      <button class="button" id="copy-url" type="button">학생 주소 복사</button>
+    </div>
+    <p id="copy-status" role="status"></p>
+    <p>교사 화면에서 방금 정한 비밀번호로 로그인하세요. 가상 학생 한 명을 등록하고 활동과 이미지 한 장을 확인하면 학생들에게 주소를 나눠 줄 수 있습니다.</p>
+    <p>설치를 마쳤다면 <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer">Cloudflare의 API Tokens ↗</a>에서 이번 설치 토큰을 삭제하거나 만료되도록 두세요.</p>
+  </section>
+</main>
+<footer class="wrap">기존 GitHub 배포 방법도 <a href="https://classroom-voice-moodboards.spiffy-jute-ffc.workers.dev/training-guide">선생님 배포 안내</a>에서 이용할 수 있습니다.</footer>
+</body>
+</html>
