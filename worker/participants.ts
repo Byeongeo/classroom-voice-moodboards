@@ -13,11 +13,18 @@ export function activityAccessSql(activityAlias = 'a', classAlias = 'c', student
       EXISTS(SELECT 1 FROM activity_rooms ar WHERE ar.activity_id=${activityAlias}.id AND ar.grade=${studentAlias}.grade AND ar.class_number=${studentAlias}.class_number))=1
     ELSE ${classAccessSql(classAlias, studentAlias)} END)`;
 }
-export async function validateParticipants(env: Env, targets: AssignmentTargets) {
+export async function validateParticipants(env: Env, targets: AssignmentTargets, existing?: { scope: 'class' | 'activity'; id: string }) {
   if (!targets.students.length) return;
   const registered = await sql(env, 'SELECT id FROM students WHERE enabled=1').all<{id:string}>();
   const ids = new Set(registered.results.map(student => student.id));
-  assert(targets.students.every(student => ids.has(student.studentId)), 400, 'STUDENT_NOT_FOUND', '등록된 학생만 배정할 수 있습니다.');
+  const inactive = targets.students.filter(student => !ids.has(student.studentId));
+  if (!inactive.length) return;
+  // A deleted account cannot be newly assigned. Keep its saved choice when a teacher edits other targets.
+  const previous = existing && (existing.scope === 'class'
+    ? await sql(env, 'SELECT student_id,access FROM class_students WHERE class_id=?', existing.id).all<{ student_id: string; access: number }>()
+    : await sql(env, 'SELECT student_id,access FROM activity_participants WHERE activity_id=?', existing.id).all<{ student_id: string; access: number }>());
+  const saved = new Map(previous?.results.map(item => [item.student_id, !!item.access]));
+  assert(inactive.every(student => saved.get(student.studentId) === student.access), 400, 'STUDENT_NOT_FOUND', '등록된 학생만 새로 배정할 수 있습니다.');
 }
 export function participantInserts(env: Env, scope: 'class' | 'activity', id: string, targets: AssignmentTargets) {
   const statements: D1PreparedStatement[] = [];
@@ -44,18 +51,14 @@ export function activityAssignmentStatements(env: Env, activityId: string, assig
 export async function assignActivity(request: Request, env: Env, activityId: string) {
   const assignment = activityAssignmentSchema.parse(await body(request));
   assert(await sql(env, 'SELECT a.id FROM activities a JOIN classes c ON c.id=a.class_id WHERE a.id=? AND a.deleted_at IS NULL AND c.deleted_at IS NULL', activityId).first(), 404, 'ACTIVITY_NOT_FOUND', '활동을 찾을 수 없습니다.');
-  await validateParticipants(env, assignment);
+  if (assignment.mode === 'custom') await validateParticipants(env, assignment, { scope: 'activity', id: activityId });
   await env.DB.batch(activityAssignmentStatements(env, activityId, assignment));
   return json({ok:true});
 }
 export async function assignClass(request: Request, env: Env, classId: string) {
   const v = assignmentSchema.parse(await body(request));
   assert(await sql(env, 'SELECT id FROM classes WHERE id=? AND deleted_at IS NULL', classId).first(), 404, 'CLASS_NOT_FOUND', '클래스를 찾을 수 없습니다.');
-  if (v.students.length) {
-    const registered = await sql(env, 'SELECT id FROM students WHERE enabled=1').all<{id:string}>();
-    const ids = new Set(registered.results.map(s=>s.id));
-    assert(v.students.every(s=>ids.has(s.studentId)), 400, 'STUDENT_NOT_FOUND', '등록된 학생만 배정할 수 있습니다.');
-  }
+  await validateParticipants(env, v, { scope: 'class', id: classId });
   await env.DB.batch([
     sql(env, 'DELETE FROM class_rooms WHERE class_id=?', classId),
     sql(env, 'DELETE FROM class_students WHERE class_id=?', classId),

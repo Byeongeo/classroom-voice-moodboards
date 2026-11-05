@@ -78,6 +78,47 @@
       </section>
       <section class="step-panel" data-panel="5" aria-labelledby="title-5" hidden><span class="step-kicker">STEP 06 · 첫 수업 준비</span><h2 id="title-5" tabindex="-1">내 주소로 접속해 교실을 열어요.</h2><p class="lead">아래에 Cloudflare에서 복사한 <strong>본인의 앱 주소</strong>를 붙여 넣습니다. 강사의 주소가 아니라 내 계정에 배포된 주소를 사용해 주세요.</p><label class="field-label" for="app-url">내 앱 주소</label><input class="url-input" id="app-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://앱이름.내계정.workers.dev"><p class="live-message" id="url-message" role="status"></p><div class="actions"><button class="button primary" id="open-teacher">내 관리자 페이지 열기 ↗</button><button class="button" id="open-student">학생 입장 화면 열기 ↗</button><button class="button" id="copy-url">학생에게 줄 주소 복사</button></div>
         <ol class="steps"><li><strong>내 관리자 페이지 열기</strong>를 누르고 4단계의 비밀번호로 로그인합니다. 별도의 관리자 아이디나 번호는 없습니다.</li><li><strong>학생 · 명단</strong>에서 Excel/CSV 양식을 내려받아 학생 정보를 입력하고 업로드합니다. 처음에는 가상의 학생 한 명으로 확인해 보세요.</li><li>발급된 학생 비밀번호는 새로고침 전에 <strong>안내 카드 인쇄</strong>나 CSV 저장으로 보관합니다.</li><li><strong>클래스와 활동</strong>을 만들고 참여할 학급·학생, 시작·종료 시간, 발화 횟수를 정합니다.</li><li>학생 계정으로 로그인해 배정된 활동과 이미지 한 장을 확인합니다. 마이크 입력은 Chrome에서 권한을 허용합니다.</li><li>교사 화면의 발화 기록·점수 근거·백업을 확인하고 학생들에게 주소와 개인 비밀번호를 배부합니다.</li></ol>
+        <section aria-labelledby="student-account-guide">
+          <h3 id="student-account-guide">등록한 학생의 이름과 비밀번호를 관리해요.</h3>
+          <ol class="steps">
+            <li>내 앱의 관리자 페이지에 로그인하고 위쪽 메뉴에서 <strong>학생 · 명단</strong>을 누릅니다.</li>
+            <li><strong>등록 학생 이름·비밀번호 관리</strong>를 누릅니다. <strong>등록 학생 명단</strong>에서 학년·반·번호를 확인하고 해당 학생 줄의 버튼을 사용합니다.</li>
+          </ol>
+          <details>
+            <summary>이름을 잘못 입력했어요</summary>
+            <ol class="steps">
+              <li>해당 학생 줄의 <strong>이름 수정</strong>을 누릅니다.</li>
+              <li><strong>새 이름</strong>을 입력하고 <strong>저장</strong>을 누릅니다.</li>
+            </ol>
+            <p>예를 들어 3학년 1반 1번의 이름을 잘못 적었다면 그 학생의 이름만 수정하면 됩니다. 학생은 수정한 이름과 기존 비밀번호로 로그인합니다. 그동안의 발화와 이미지는 같은 계정에 남습니다.</p>
+          </details>
+          <details>
+            <summary>학생이 기억할 수 있는 비밀번호로 바꾸고 싶어요</summary>
+            <ol class="steps">
+              <li>해당 학생 줄의 <strong>비밀번호 변경</strong>을 누릅니다.</li>
+              <li><strong>새 비밀번호</strong>에 6~128자를 직접 입력합니다. <strong>입력한 비밀번호 표시</strong>를 선택하면 저장 전에 입력값을 확인할 수 있습니다.</li>
+              <li><strong>저장</strong>을 누르고 새 비밀번호를 해당 학생에게 알려 줍니다.</li>
+            </ol>
+            <p>저장하면 기존 로그인이 종료됩니다. 학생은 새 비밀번호로 다시 입장합니다. 여러 학생에게 자동으로 새 비밀번호를 발급하려면 명단에서 학생을 선택하고 <strong>선택 …명 비밀번호 재발급</strong>을 누릅니다.</p>
+          </details>
+          <details>
+            <summary>학생의 로그인을 막고 명단에서 내리고 싶어요</summary>
+            <ol class="steps">
+              <li>해당 학생 줄의 <strong>삭제</strong>를 누릅니다.</li>
+              <li>확인 창에서 학년·반·번호와 이름을 확인한 뒤 <strong>학생 삭제</strong>를 누릅니다.</li>
+            </ol>
+            <p>삭제하면 현재 로그인이 종료되고 다시 입장할 수 없습니다. 교사는 이전 발화와 이미지를 계속 볼 수 있습니다.</p>
+          </details>
+          <details>
+            <summary>삭제한 학생을 다시 참여시키고 싶어요</summary>
+            <ol class="steps">
+              <li><strong>등록 학생 명단</strong> 아래의 <strong>삭제된 학생 …명</strong>을 펼칩니다.</li>
+              <li>해당 학생 줄의 <strong>복구</strong>를 누릅니다. 새 비밀번호를 입력하거나 빈칸으로 두어 자동 발급을 선택합니다.</li>
+              <li><strong>학생 복구</strong>를 누른 뒤, <strong>발급된 비밀번호</strong>에서 새 비밀번호를 확인해 학생에게 알려 줍니다.</li>
+            </ol>
+            <p>같은 학생을 다시 받으려면 기존 계정을 복구하세요. 학년·반·번호는 삭제 후에도 그 계정에 연결됩니다.</p>
+          </details>
+        </section>
         <div class="notice">
           <strong>학생 이력과 교사 분석을 확인해요.</strong>
           <ul>

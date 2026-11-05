@@ -7,6 +7,7 @@ import { runAnalysis, runGeneration, recoverJobs } from '../worker/jobs';
 import { processBackup, expireBackups } from '../worker/backup';
 import { validateLanguage, validateSemantic } from '../worker/analysis';
 import { ClassroomTasks } from '../worker/tasks';
+import { issueSession } from '../worker/auth';
 import { storageUsage, reserveObject } from '../worker/storage';
 import { normalizeXlsx, readRoster, validateRows } from '../src/roster';
 import { splitBackupFiles } from '../src/backupFiles';
@@ -398,4 +399,68 @@ describe('활동별 독립 참여 대상',()=>{
     expect((await teacher('/api/admin/activities/'+created.id+'/assignments','PUT',{mode:'unknown',rooms:[],students:[]})).status).toBe(400);
     expect((await teacher('/api/admin/activities/'+crypto.randomUUID()+'/assignments','PUT',{mode:'custom',rooms:[],students:[]})).status).toBe(404);
   });
+});
+
+it('교사가 이름과 비밀번호를 고치고 삭제·복구해도 같은 학생의 발화·이미지를 보존한다', async () => {
+  const original = { grade: 3, classNumber: 1, studentNumber: 1, name: '이름오타', password: 'first-password' };
+  const corrected = { ...original, name: '검증학생' };
+  const login = (student: typeof original) => call('/api/login', 'POST', student);
+  expect((await teacher('/api/admin/students', 'POST', { students: [original] })).status).toBe(201);
+  const initialSession = cookieOf(await login(original));
+  const { id } = (await value(await call('/api/me', 'GET', undefined, initialSession))).student;
+  const path = '/api/admin/students/' + id;
+  const staleCredentials = (await env.DB.prepare('SELECT id,name,password_hash FROM students WHERE id=?')
+    .bind(id).first<{ id: string; name: string; password_hash: string }>())!;
+
+  expect((await call(path, 'PATCH', { name: corrected.name }, initialSession)).status).toBe(403);
+  expect((await teacher(path, 'PATCH', { name: '  ' })).status).toBe(400);
+  const rename = await teacher(path, 'PATCH', { name: corrected.name });
+  expect(await value(rename)).toMatchObject({ student: { id, name: corrected.name } });
+  expect((await login(original)).status).toBe(401);
+  const correctedSession = cookieOf(await login(corrected));
+  await expect(issueSession(apiEnv, new Request(origin), staleCredentials)).rejects.toMatchObject({ code: 'LOGIN_FAILED' });
+
+  const assignment = { mode: 'custom', rooms: [], students: [{ studentId: id, access: true }] };
+  const draft = { classId, title: '학생 계정 수정 검증', unit: '검증', opensAt: Date.now()-1_000, closesAt: Date.now()+600_000, commandLimit: 5, assignment };
+  const created = await teacher('/api/admin/activities', 'POST', draft);
+  expect(created.status).toBe(201);
+  const activity = (await value(created)).id;
+  expect((await call('/api/activities/'+activity+'/join', 'POST', {}, correctedSession)).status).toBe(200);
+  const accepted = await command({ id, cookie: correctedSession, name: corrected.name, number: 1 }, utterance, crypto.randomUUID(), activity);
+  expect(accepted.status).toBe(202);
+  const { eventId } = await value(accepted);
+  await runGeneration(apiEnv, eventId);
+  const image = (await env.DB.prepare('SELECT id FROM images WHERE event_id=?').bind(eventId).first<{ id: string }>())!;
+  expect(image.id).toBeTruthy();
+
+  const password = '012345';
+  expect((await teacher(path+'/password', 'PUT', { password: '12345' })).status).toBe(400);
+  const changed = await teacher(path+'/password', 'PUT', { password });
+  expect(await value(changed)).toMatchObject({ credentials: [{ name: corrected.name, password }] });
+  expect((await call('/api/me', 'GET', undefined, correctedSession)).status).toBe(401);
+  expect((await login(corrected)).status).toBe(401);
+  const newSession = cookieOf(await login({ ...corrected, password }));
+
+  const removed = await teacher(path, 'DELETE');
+  expect(await value(removed)).toMatchObject({ student: { id, enabled: 0 } });
+  expect((await call('/api/me', 'GET', undefined, newSession)).status).toBe(401);
+  expect((await login({ ...corrected, password })).status).toBe(401);
+  expect((await teacher(path+'/password', 'PUT', { password })).status).toBe(404);
+  expect((await teacher('/api/admin/passwords/reset', 'POST', { studentIds: [id] })).status).toBe(404);
+  const duplicate = await teacher('/api/admin/students', 'POST', { students: [corrected] });
+  expect(duplicate.status).toBe(409);
+  expect((await value(duplicate)).error).toContain('삭제된 학생 목록');
+
+  expect((await teacher('/api/admin/activities/'+activity+'/assignments', 'PUT', assignment)).status).toBe(200);
+  expect((await teacher('/api/admin/activities', 'POST', draft)).status).toBe(400);
+  const records = await value(await teacher('/api/admin/activities/'+activity+'/records'));
+  expect(records.rows).toEqual(expect.arrayContaining([expect.objectContaining({ id: eventId })]));
+  expect((await teacher('/api/images/'+image.id)).status).toBe(200);
+
+  const restored = await teacher(path+'/restore', 'POST', {});
+  expect(restored.status).toBe(200);
+  const result = await value(restored);
+  expect(result.student).toMatchObject({ id, name: corrected.name, enabled: 1 });
+  const restoredSession = cookieOf(await login({ ...corrected, password: result.credentials[0].password }));
+  expect((await call('/api/images/'+image.id, 'GET', undefined, restoredSession)).status).toBe(200);
 });

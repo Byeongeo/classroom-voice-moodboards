@@ -1,5 +1,5 @@
 import { z, ZodError } from 'zod';
-import { activitySchema, classSchema, commandSchema, genreSchema, loginSchema, MODELS, rosterSchema, type Activity, type ImageStyle, type Student } from '../shared/contracts';
+import { activitySchema, classSchema, commandSchema, genreSchema, loginSchema, MODELS, type Activity, type ImageStyle, type Student } from '../shared/contracts';
 import { cookie, digest, getSession, issueSession, passwordHash, rateLimitLogin, requireTeacher, sameSecret } from './auth';
 import { allowedActivity, kstDayStart, quota, studentById, workspace, workspaceStatus } from './data';
 import { ApiError, assert, body, json, now, sql, type Env, type Session } from './env';
@@ -11,6 +11,7 @@ import { imageAction, uploadImage } from './images';
 import { analyticsActivity, analyticsSummary, scoreEvidencePage } from './analytics';
 import { adminRecentPage, studentRecentPage } from './pagination';
 import { deliverImage, imageReadId } from './imageDelivery';
+import { registerRoster, removeStudent, renameStudent, resetRosterPasswords, updateStudentPassword } from './roster';
 
 async function login(request: Request, env: Env) {
   const input = await body(request) as Record<string, unknown>;
@@ -18,7 +19,7 @@ async function login(request: Request, env: Env) {
     await rateLimitLogin(request, env, 'teacher');
     assert(env.TEACHER_PASSWORD?.length >= 4 && env.TEACHER_PASSWORD.length <= 128 && !env.TEACHER_PASSWORD.startsWith('replace-'), 503, 'ADMIN_NOT_CONFIGURED', '관리자 비밀번호를 4~128자로 설정해 주세요.');
     assert(typeof input.teacherPassword === 'string' && input.teacherPassword.length >= 4 && input.teacherPassword.length <= 128 && await sameSecret(input.teacherPassword, env.TEACHER_PASSWORD), 401, 'LOGIN_FAILED', '로그인 정보를 확인해 주세요.');
-    return json({ role: 'teacher' }, 200, { 'Set-Cookie': await issueSession(env, 'teacher', null, request) });
+    return json({ role: 'teacher' }, 200, { 'Set-Cookie': await issueSession(env, request) });
   }
   const v = loginSchema.parse(input);
   await rateLimitLogin(request, env, `${v.grade}:${v.classNumber}:${v.studentNumber}`);
@@ -26,25 +27,7 @@ async function login(request: Request, env: Env) {
   // Run the same password derivation for an unknown identity to avoid a quick account probe.
   const derived = await passwordHash(v.password, student?.salt || 'unregistered-student-placeholder');
   assert(student && await sameSecret(derived, student.password_hash), 401, 'LOGIN_FAILED', '등록된 학년·반·번호·이름과 비밀번호를 확인해 주세요.');
-  return json({ role: 'student' }, 200, { 'Set-Cookie': await issueSession(env, 'student', student.id, request) });
-}
-
-async function registerRoster(request: Request, env: Env) {
-  const { students } = rosterSchema.parse(await body(request));
-  const unique = new Set(students.map((s) => `${s.grade}:${s.classNumber}:${s.studentNumber}`));
-  assert(unique.size === students.length, 400, 'DUPLICATE_ROSTER', '파일 안에 같은 학년·반·번호가 중복되어 있습니다.');
-  const duplicates = await sql(env, `SELECT grade,class_number,student_number FROM students WHERE
-    (grade || ':' || class_number || ':' || student_number) IN (${[...unique].map(() => '?').join(',')})`, ...unique).all<{grade:number;class_number:number;student_number:number}>();
-  const duplicate = duplicates.results[0];
-  assert(!duplicate, 409, 'STUDENT_EXISTS', duplicate ? `${duplicate.grade}학년 ${duplicate.class_number}반 ${duplicate.student_number}번은 이미 등록되어 있습니다.` : '이미 등록된 학생이 있습니다.');
-  const rows = await Promise.all(students.map(async (s) => {
-    const password = s.password || crypto.randomUUID().replaceAll('-', '').slice(0, 10);
-    const salt = crypto.randomUUID();
-    return { ...s, id: crypto.randomUUID(), password, salt, hash: await passwordHash(password, salt) };
-  }));
-  await env.DB.batch(rows.map((s) => sql(env, `INSERT INTO students(id,grade,class_number,student_number,name,password_hash,salt,quota_reset_at,created_at)
-    VALUES(?,?,?,?,?,?,?,?,?)`, s.id, s.grade, s.classNumber, s.studentNumber, s.name, s.hash, s.salt, 0, now())));
-  return json({ registered: rows.length, credentials: rows.map(({ grade, classNumber, studentNumber, name, password }) => ({ grade, classNumber, studentNumber, name, password })) }, 201);
+  return json({ role: 'student' }, 200, { 'Set-Cookie': await issueSession(env, request, student) });
 }
 
 async function admin(request: Request, env: Env, session: Session, url: URL) {
@@ -54,7 +37,7 @@ async function admin(request: Request, env: Env, session: Session, url: URL) {
     const [classes, activities, students, settings, backups, styles, rooms, assignments, genres, activityRooms, activityAssignments, storage] = await Promise.all([
       sql(env, 'SELECT * FROM classes ORDER BY grade,class_number').all(),
       sql(env, 'SELECT a.*,c.name class_name FROM activities a JOIN classes c ON c.id=a.class_id ORDER BY a.opens_at DESC').all(),
-      sql(env, 'SELECT id,grade,class_number,student_number,name,enabled FROM students ORDER BY grade,class_number,student_number LIMIT 2000').all(),
+      sql(env, 'SELECT id,grade,class_number,student_number,name,enabled FROM students ORDER BY enabled DESC,grade,class_number,student_number LIMIT 2000').all(),
       sql(env, 'SELECT * FROM settings').all(),
       sql(env, `SELECT b.*, (SELECT COUNT(*) FROM backup_images i WHERE i.backup_id=b.id) image_count,
         (SELECT COUNT(*) FROM backup_images i WHERE i.backup_id=b.id AND i.copied=1) copied_count FROM backups b ORDER BY created_at DESC LIMIT 100`).all(),
@@ -84,23 +67,19 @@ async function admin(request: Request, env: Env, session: Session, url: URL) {
     return json({ ok: true });
   }
   if (route === '/api/admin/students' && request.method === 'POST') return registerRoster(request, env);
-  if (route === '/api/admin/passwords/reset' && request.method === 'POST') {
-    const { studentIds } = z.object({ studentIds: z.array(z.string().uuid()).min(1).max(20) }).parse(await body(request));
-    assert(new Set(studentIds).size === studentIds.length, 400, 'DUPLICATE_IDS', '학생이 중복되었습니다.');
-    const selected = await sql(env, `SELECT id,grade,class_number,student_number,name FROM students WHERE id IN (${studentIds.map(() => '?').join(',')})`, ...studentIds).all<Student>();
-    assert(selected.results.length === studentIds.length, 404, 'STUDENT_NOT_FOUND', '등록된 학생을 선택해 주세요.');
-    const rows = await Promise.all(selected.results.map(async (s) => {
-      const password = crypto.randomUUID().replaceAll('-', '').slice(0, 10);
-      const salt = crypto.randomUUID();
-      return { ...s, password, salt, hash: await passwordHash(password, salt) };
-    }));
-    await env.DB.batch(rows.flatMap((s) => [sql(env, 'UPDATE students SET password_hash=?,salt=? WHERE id=?', s.hash, s.salt, s.id), sql(env, 'DELETE FROM sessions WHERE student_id=?', s.id)]));
-    return json({ credentials: rows.map((s) => ({ grade: s.grade, classNumber: s.class_number, studentNumber: s.student_number, name: s.name, password: s.password })) });
+  if (route === '/api/admin/passwords/reset' && request.method === 'POST') return resetRosterPasswords(request, env);
+  const studentMatch = route.match(/^\/api\/admin\/students\/([\w-]+)(?:\/(password|restore))?$/);
+  if (studentMatch) {
+    const [, id, operation] = studentMatch;
+    if (!operation && request.method === 'PATCH') return renameStudent(request, env, id);
+    if (!operation && request.method === 'DELETE') return removeStudent(env, id);
+    if (operation === 'password' && request.method === 'PUT') return updateStudentPassword(request, env, id, false);
+    if (operation === 'restore' && request.method === 'POST') return updateStudentPassword(request, env, id, true);
   }
   if (route === '/api/admin/activities' && request.method === 'POST') {
     const v = activitySchema.parse(await body(request)); const id = crypto.randomUUID();
     assert(await sql(env, 'SELECT id FROM classes WHERE id=? AND deleted_at IS NULL', v.classId).first(), 404, 'CLASS_NOT_FOUND', '클래스를 찾을 수 없습니다.');
-    if (v.assignment) await validateParticipants(env, v.assignment);
+    if (v.assignment?.mode === 'custom') await validateParticipants(env, v.assignment);
     await env.DB.batch([
       sql(env, `INSERT INTO activities(id,class_id,title,unit,instructions,opens_at,closes_at,command_limit,rubric_json,created_at)
         VALUES(?,?,?,?,?,?,?,?,?,?)`, id, v.classId, v.title, v.unit, v.instructions, v.opensAt, v.closesAt, v.commandLimit, JSON.stringify(v.rubric), now()),
@@ -115,7 +94,7 @@ async function admin(request: Request, env: Env, session: Session, url: URL) {
     const v = activitySchema.parse(await body(request));
     const old = await sql(env, 'SELECT class_id FROM activities WHERE id=?', activityMatch[1]).first<{class_id:string}>();
     assert(old && old.class_id === v.classId, 400, 'CLASS_IMMUTABLE', '활동을 다른 클래스로 옮길 수는 없습니다. 참여할 학급·학생은 이 활동의 참여 대상에서 변경해 주세요.');
-    if (v.assignment) await validateParticipants(env, v.assignment);
+    if (v.assignment?.mode === 'custom') await validateParticipants(env, v.assignment, { scope: 'activity', id: activityMatch[1] });
     await env.DB.batch([
       sql(env, 'UPDATE activities SET title=?,unit=?,instructions=?,opens_at=?,closes_at=?,command_limit=?,rubric_json=? WHERE id=?', v.title, v.unit, v.instructions, v.opensAt, v.closesAt, v.commandLimit, JSON.stringify(v.rubric), activityMatch[1]),
       ...(v.assignment ? activityAssignmentStatements(env, activityMatch[1], v.assignment) : []),

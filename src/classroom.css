@@ -23,3 +23,12 @@ button:hover,.button:hover{background:#edf3ec;border-color:#a8bfad}button:disabl
   .credential-print-root{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:3mm!important;margin:0!important}
   .credential-card{padding:5mm;min-height:44mm;break-inside:avoid;page-break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}.credential-card>strong{font-size:10pt}.credential-card p{font-size:11pt;margin:3mm 0}.credential-card small{font-size:8pt;margin-top:3mm}.credential-card code{font-size:14pt}
 }
+.student-account-dialog{width:min(520px,calc(100vw - 24px))}
+.roster-shortcut{margin-bottom:16px}
+#registered-students{scroll-margin-top:12px}
+.roster-row-actions{display:flex;gap:6px}
+.roster-row-actions button{padding:7px 9px}
+.roster-row-actions .danger,.student-account-dialog .danger{color:#9a3d32;border-color:#dfb6ac}
+.roster-row-actions .danger:hover,.student-account-dialog .danger:hover{background:#fff0ee}
+.removed-students{margin-top:18px;border-top:1px solid var(--border);padding-top:14px}
+.removed-students summary{cursor:pointer;font-weight:650}

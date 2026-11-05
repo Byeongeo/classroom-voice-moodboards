@@ -18,9 +18,17 @@ export async function sameSecret(a: string, b: string) {
 export function cookie(token: string, request: Request, maxAge = 60 * 60 * 8) {
   return `classroom_session=${token}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=${maxAge}${new URL(request.url).protocol === 'https:' ? '; Secure' : ''}`;
 }
-export async function issueSession(env: Env, role: Session['role'], studentId: string | null, request: Request) {
+export async function issueSession(env: Env, request: Request, student?: { id: string; name: string; password_hash: string }) {
   const token = crypto.randomUUID() + crypto.randomUUID();
-  await sql(env, 'INSERT INTO sessions(token_hash, student_id, role, expires_at) VALUES(?,?,?,?)', await digest(token), studentId, role, now() + 28_800_000).run();
+  const hash = await digest(token);
+  const expiresAt = now() + 28_800_000;
+  // A login that started before an account change must verify the same credentials when issuing its session.
+  const result = student
+    ? await sql(env, `INSERT INTO sessions(token_hash,student_id,role,expires_at)
+        SELECT ?,id,'student',? FROM students WHERE id=? AND enabled=1 AND name=? AND password_hash=?`,
+        hash, expiresAt, student.id, student.name, student.password_hash).run()
+    : await sql(env, "INSERT INTO sessions(token_hash,role,expires_at) VALUES(?,'teacher',?)", hash, expiresAt).run();
+  assert(result.meta.changes === 1, 401, 'LOGIN_FAILED', '등록된 학년·반·번호·이름과 비밀번호를 확인해 주세요.');
   return cookie(token, request);
 }
 export async function getSession(request: Request, env: Env): Promise<Session> {

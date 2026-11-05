@@ -29,7 +29,8 @@ export default function ClassActivities({ classes, activities, students, rooms, 
   const enabledStudents = students.filter(student => student.enabled);
   const classRooms = rooms.filter(room => room.class_id === classroom?.id);
   const classAssignments = assignments.filter(item => item.class_id === classroom?.id);
-  const defaults = classTargets(classRooms, classAssignments);
+  const enabledIds = new Set(enabledStudents.map(student => student.id));
+  const defaults = classTargets(classRooms, classAssignments.filter(item => enabledIds.has(item.student_id)));
   const participants = selectedStudents(enabledStudents, defaults);
   const classActivities = activities.filter(activity => !activity.deleted_at && activity.class_id === classroom?.id);
   const followingDefaults = classActivities.filter(activity => activity.assignment_mode !== 'custom').length;

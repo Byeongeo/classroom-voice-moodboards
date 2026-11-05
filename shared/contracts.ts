@@ -34,9 +34,10 @@ export const identitySchema = z.object({
   studentNumber: z.coerce.number().int().min(1).max(100),
   name: z.string().trim().min(1).max(30),
 });
-export const loginSchema = identitySchema.extend({ password: z.string().min(6).max(128) });
+export const studentPasswordSchema = z.string().min(6).max(128);
+export const loginSchema = identitySchema.extend({ password: studentPasswordSchema });
 export const rosterSchema = z.object({ students: z.array(identitySchema.extend({
-  password: z.string().min(6).max(128).optional(),
+  password: studentPasswordSchema.optional(),
   commandLimit: z.number().int().min(0).max(200).default(10),
 })).min(1).max(25) });
 export const commandSchema = z.object({
@@ -75,6 +76,7 @@ export type Student = {
   id: string; grade: number; class_number: number; student_number: number; name: string;
   command_limit: number; quota_reset_at: number; enabled: number; current_board_id: string | null;
 };
+export type RosterStudent = Pick<Student, 'id' | 'grade' | 'class_number' | 'student_number' | 'name' | 'enabled'>;
 export type Board = { id: string; activity_id: string; title: string; active_image_id: string | null; created_at: number };
 const roomSchema = z.object({ grade: z.number().int().min(1).max(12), classNumber: z.number().int().min(1).max(50) });
 export const classSchema = z.object({ name: z.string().trim().min(1).max(80), grade: z.number().int().min(1).max(12).optional(), classNumber: z.number().int().min(1).max(50).optional(), rooms: z.array(roomSchema).max(100).optional() }).refine(v => (v.grade === undefined) === (v.classNumber === undefined), '학년과 반을 함께 지정해 주세요.');
