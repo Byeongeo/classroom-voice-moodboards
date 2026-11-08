@@ -401,6 +401,78 @@ describe('활동별 독립 참여 대상',()=>{
   });
 });
 
+it('보관·새로 시작한 장면에는 이전 주제나 이미지를 전달하지 않고 선택한 이미지에서만 수정을 이어 간다', async () => {
+  const identity = { grade: 12, classNumber: 47, studentNumber: 1, name: '새장면검증', password: 'fixture-password' };
+  expect((await teacher('/api/admin/students', 'POST', { students: [identity] })).status).toBe(201);
+  const cookie = cookieOf(await call('/api/login', 'POST', identity));
+  const { student } = await value(await call('/api/me', 'GET', undefined, cookie));
+  const actor = { id: student.id, name: identity.name, number: 1, cookie };
+  const activity = await value(await teacher('/api/admin/activities', 'POST', {
+    classId, title: '장면 문맥 분리', unit: '검증', opensAt: Date.now()-1_000, closesAt: Date.now()+600_000,
+    commandLimit: 10, assignment: { mode: 'custom', rooms: [{ grade: 12, classNumber: 47 }], students: [] },
+  }));
+  await call('/api/activities/'+activity.id+'/join', 'POST', {}, cookie);
+  const workspace = () => call('/api/workspace?activityId='+activity.id, 'GET', undefined, cookie).then(value);
+  const first = await value(await command(actor, '바닷가에서 큰 게 한 마리가 집게를 들고 있다.', crypto.randomUUID(), activity.id));
+  await runGeneration(apiEnv, first.eventId);
+  const initial = await workspace();
+  const imageId = initial.board.active_image_id;
+  const staleTheme = '이전 장면의 게와 바닷가';
+  await env.DB.prepare('UPDATE boards SET title=? WHERE id=?').bind(staleTheme, initial.board.id).run();
+  expect((await call('/api/images/'+imageId+'/pin', 'POST', {}, cookie)).status).toBe(200);
+  expect((await workspace()).board.active_image_id).toBeNull();
+  // Old boards can retain a title from before this fix. It must never become generation context.
+  await env.DB.prepare('UPDATE boards SET title=? WHERE id=?').bind(staleTheme, initial.board.id).run();
+  const provider = vi.mocked(fetch);
+  provider.mockClear();
+  provider.mockImplementationOnce(async (_url, init) => {
+    const input = JSON.parse(JSON.parse(String(init!.body)).messages[1].content);
+    expect(input.theme).toBeNull();
+    expect(input.activeImagePrompt).toBeNull();
+    return Response.json({ choices: [{ message: { content: JSON.stringify({
+      action: 'START_NEW_THEME', themeTitle: null, imagePrompt: input.transcript,
+    }) } }] });
+  });
+  const second = await value(await command(actor, '초등학교 앞에서 학생들이 하교하는 모습', crypto.randomUUID(), activity.id));
+  await runGeneration(apiEnv, second.eventId);
+  const imageRequest = provider.mock.calls.find(([url]) => String(url).endsWith('/images'))!;
+  expect(JSON.parse(String(imageRequest[1]!.body)).input_references).toBeUndefined();
+  expect(String(imageRequest[1]!.body)).not.toContain(staleTheme);
+  expect(String(imageRequest[1]!.body)).not.toContain(imageId);
+  expect((await env.DB.prepare('SELECT parent_image_id FROM images WHERE event_id=?').bind(second.eventId).first<any>()).parent_image_id).toBeNull();
+
+  const startPath = '/api/activities/'+activity.id+'/start-new';
+  const pending = await value(await command(actor, '수정: 학생의 모자를 파랗게 바꿔 줘.', crypto.randomUUID(), activity.id));
+  const beforeBusy = await workspace();
+  expect((await call(startPath, 'POST', {}, cookie)).status).toBe(409);
+  expect((await call('/api/images/'+second.eventId+'/pin', 'POST', {}, cookie)).status).toBe(409);
+  expect((await workspace()).board.active_image_id).toBe(beforeBusy.board.active_image_id);
+  await runGeneration(apiEnv, pending.eventId);
+  const beforeReset = await workspace();
+  expect((await call(startPath, 'POST', {}, cookie)).status).toBe(200);
+  expect((await call(startPath, 'POST', {}, cookie)).status).toBe(200);
+  const reset = await workspace();
+  expect(reset.used).toBe(beforeReset.used);
+  expect(reset.images).toHaveLength(beforeReset.images.length);
+  expect(reset.images.find((image:any) => image.id === beforeReset.board.active_image_id).on_board).toBe(1);
+  expect(reset.board.active_image_id).toBeNull();
+  const history = await value(await call('/api/activities/'+activity.id+'/image-actions', 'GET', undefined, cookie));
+  expect(history.rows.filter((action:any) => JSON.parse(action.metadata_json).source === 'start-new')).toHaveLength(1);
+  expect((await call(startPath, 'POST', {})).status).toBe(401);
+  provider.mockClear();
+  const next = await value(await command(actor, '넓은 초원에 나무 세 그루', crypto.randomUUID(), activity.id));
+  await runGeneration(apiEnv, next.eventId);
+  expect(JSON.parse(JSON.parse(String(provider.mock.calls[0][1]!.body)).messages[1].content)).toMatchObject({ theme: null, activeImagePrompt: null });
+
+  expect((await call('/api/images/'+imageId+'/activate', 'POST', {}, cookie)).status).toBe(200);
+  provider.mockClear();
+  const edit = await value(await command(actor, '수정: 집게를 빨갛게 바꿔 줘.', crypto.randomUUID(), activity.id));
+  await runGeneration(apiEnv, edit.eventId);
+  const intentRequest = JSON.parse(String(provider.mock.calls[0][1]!.body));
+  expect(JSON.parse(intentRequest.messages[1].content).activeImagePrompt).toBe(initial.images.find((image:any) => image.id === imageId).prompt);
+  expect((await env.DB.prepare('SELECT parent_image_id FROM images WHERE event_id=?').bind(edit.eventId).first<any>()).parent_image_id).toBe(imageId);
+});
+
 it('교사가 이름과 비밀번호를 고치고 삭제·복구해도 같은 학생의 발화·이미지를 보존한다', async () => {
   const original = { grade: 3, classNumber: 1, studentNumber: 1, name: '이름오타', password: 'first-password' };
   const corrected = { ...original, name: '검증학생' };

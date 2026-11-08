@@ -48,8 +48,10 @@ export async function runGeneration(env: Env, id: string): Promise<'done' | 'bus
     const board = await sql(env, 'SELECT * FROM boards WHERE id=? AND student_id=?', event.board_id, event.student_id).first<Board>();
     if (!board) throw new ApiError(404, 'BOARD_NOT_FOUND', 'Board unavailable');
     if (!event.action) {
-      const active = board.active_image_id ? await sql(env, 'SELECT prompt FROM images WHERE id=? AND student_id=?', board.active_image_id, event.student_id).first<{prompt:string}>() : null;
-      const parsed = intentSchema.parse(await textCompletion(env, INTENT_PROMPT, { transcript: event.transcript, theme: board.title, activeImagePrompt: active?.prompt || null }));
+      const active = board.active_image_id ? await sql(env, `SELECT i.prompt,e.theme FROM images i
+        JOIN events e ON e.id=i.event_id WHERE i.id=? AND i.student_id=? AND i.hidden_at IS NULL`,
+        board.active_image_id, event.student_id).first<{prompt:string;theme:string|null}>() : null;
+      const parsed = intentSchema.parse(await textCompletion(env, INTENT_PROMPT, { transcript: event.transcript, theme: active?.theme ?? null, activeImagePrompt: active?.prompt || null }));
       if (parsed.action === 'EDIT_ACTIVE' && !active) parsed.action = 'START_NEW_THEME';
       if (['START_NEW_THEME','SAVE_AND_NEXT','EDIT_ACTIVE'].includes(parsed.action) && !parsed.imagePrompt) throw new ProviderError(false, 'MISSING_IMAGE_PROMPT');
       await sql(env, 'UPDATE events SET action=?,prompt=?,theme=?,source_image_id=?,updated_at=? WHERE id=?', parsed.action, parsed.imagePrompt, parsed.themeTitle, board.active_image_id, now(), id).run();
@@ -72,7 +74,7 @@ export async function runGeneration(env: Env, id: string): Promise<'done' | 'bus
       if (!stored) throw new ProviderError(true, 'SOURCE_STORAGE_ERROR');
       reference = { bytes: new Uint8Array(await stored.arrayBuffer()), mime: source.mime_type };
     }
-    const prompt = `${event.style_prompt}\nTheme: ${event.theme || board.title}\n${event.action === 'EDIT_ACTIVE' ? 'Edit the provided reference image, keeping the existing subject. Instruction: ' : 'Subject and composition: '}${event.prompt}`;
+    const prompt = `${event.style_prompt}\n${event.theme ? 'Theme: ' + event.theme + '\n' : ''}${event.action === 'EDIT_ACTIVE' ? 'Edit the provided reference image, keeping the existing subject. Instruction: ' : 'Subject and composition: '}${event.prompt}`;
     await checkStorageAvailable(env);
     const image = await generateImage(env, prompt, reference);
     const stored = await putObject(env, objectKey(event), image.bytes, image.bytes.byteLength, { httpMetadata: { contentType: image.mime }, customMetadata: { eventId: id } });

@@ -7,7 +7,7 @@ import { processBatch } from './jobs';
 import { storageUsage } from './storage';
 import { backupRoute, createBackup } from './backup';
 import { assignClass, assignActivity, activityAccessSql, activityAssignmentStatements, validateParticipants, participantInserts } from './participants';
-import { imageAction, uploadImage } from './images';
+import { imageAction, startNewImage, uploadImage } from './images';
 import { analyticsActivity, analyticsSummary, scoreEvidencePage } from './analytics';
 import { adminRecentPage, studentRecentPage } from './pagination';
 import { deliverImage, imageReadId } from './imageDelivery';
@@ -194,6 +194,8 @@ async function route(request: Request, env: Env) {
   }
   const uploadMatch=url.pathname.match(/^\/api\/activities\/([\w-]+)\/uploads$/);
   if(uploadMatch&&request.method==='POST')return uploadImage(request,env,student,uploadMatch[1]);
+  const startNewMatch=url.pathname.match(/^\/api\/activities\/([\w-]+)\/start-new$/);
+  if(startNewMatch&&request.method==='POST')return startNewImage(env,student,startNewMatch[1]);
   const recordsMatch=url.pathname.match(/^\/api\/activities\/([\w-]+)\/(records|image-actions)$/);
   if(recordsMatch&&request.method==='GET'){
     await allowedActivity(env,student,recordsMatch[1]);

@@ -122,10 +122,30 @@ export async function imageAction(env: Env, student: Student, id: string, action
   await allowedActivity(env,student,image.activity_id,true);
   assert(!await sql(env,"SELECT id FROM events WHERE student_id=? AND status IN ('queued','processing')",student.id).first(),409,'BUSY','이미지 처리가 끝난 뒤 변경해 주세요.');
   const timestamp=now();
-  await env.DB.batch([
-    sql(env, 'UPDATE images SET on_board=?,hidden_at=? WHERE id=?',action==='pin'?1:action==='hide'?0:image.on_board,action==='hide'?timestamp:null,id),
-    action==='activate' ? sql(env,'UPDATE boards SET active_image_id=? WHERE id=?',id,image.board_id) : sql(env,'UPDATE boards SET active_image_id=NULL WHERE id=? AND active_image_id=?',image.board_id,id),
-    sql(env, 'INSERT INTO image_actions(id,student_id,activity_id,board_id,image_id,action,metadata_json,created_at) VALUES(?,?,?,?,?,?,?,?)',crypto.randomUUID(),student.id,image.activity_id,image.board_id,id,action,JSON.stringify({previousOnBoard:image.on_board,previousHiddenAt:image.hidden_at}),timestamp),
+  const idle = "NOT EXISTS(SELECT 1 FROM events WHERE student_id=? AND status IN ('queued','processing'))";
+  const results = await env.DB.batch([
+    sql(env, `UPDATE images SET on_board=?,hidden_at=? WHERE id=? AND ${idle}`,action==='pin'?1:action==='hide'?0:image.on_board,action==='hide'?timestamp:null,id,student.id),
+    action==='activate' ? sql(env,`UPDATE boards SET active_image_id=? WHERE id=? AND ${idle}`,id,image.board_id,student.id) : sql(env,`UPDATE boards SET active_image_id=NULL,title='새 무드보드' WHERE id=? AND active_image_id=? AND ${idle}`,image.board_id,id,student.id),
+    sql(env, `INSERT INTO image_actions(id,student_id,activity_id,board_id,image_id,action,metadata_json,created_at) SELECT ?,?,?,?,?,?,?,? WHERE ${idle}`,crypto.randomUUID(),student.id,image.activity_id,image.board_id,id,action,JSON.stringify({previousOnBoard:image.on_board,previousHiddenAt:image.hidden_at}),timestamp,student.id),
   ]);
+  assert(results[0].meta.changes === 1, 409, 'BUSY', '이미지 처리가 끝난 뒤 변경해 주세요.');
   return json({ok:true});
+}
+
+export async function startNewImage(env: Env, student: Student, activityId: string) {
+  await allowedActivity(env, student, activityId, true);
+  const board = await sql(env, 'SELECT id FROM boards WHERE student_id=? AND activity_id=?', student.id, activityId).first<{ id: string }>();
+  assert(board, 400, 'JOIN_REQUIRED', '활동을 먼저 선택해 주세요.');
+  // Check inside the transaction so a concurrent command cannot lose its reference.
+  const idle = "NOT EXISTS(SELECT 1 FROM events WHERE student_id=? AND status IN ('queued','processing'))";
+  const results = await env.DB.batch([
+    sql(env, `INSERT INTO image_actions(id,student_id,activity_id,board_id,image_id,action,metadata_json,created_at)
+      SELECT ?,student_id,activity_id,id,active_image_id,'pin',?,? FROM boards WHERE id=? AND active_image_id IS NOT NULL AND ${idle}`,
+      crypto.randomUUID(), JSON.stringify({ source: 'start-new' }), now(), board.id, student.id),
+    sql(env, `UPDATE images SET on_board=1 WHERE id IN
+      (SELECT active_image_id FROM boards WHERE id=? AND ${idle})`, board.id, student.id),
+    sql(env, `UPDATE boards SET active_image_id=NULL,title='새 무드보드' WHERE id=? AND ${idle}`, board.id, student.id),
+  ]);
+  assert(results[2].meta.changes === 1, 409, 'BUSY', '이미지 처리가 끝난 뒤 새로 시작해 주세요.');
+  return json({ ok: true });
 }
